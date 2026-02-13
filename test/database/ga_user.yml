@@ -1,0 +1,8 @@
+ga_user:
+  user_id: id
+  user_nick: str
+  user_email: str
+  user_phone: str
+  user_pass: str
+  user_status: str # active,inactive,blocked
+  user_date_insert: now

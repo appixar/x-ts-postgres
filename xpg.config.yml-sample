@@ -1,0 +1,42 @@
+#────────────────────────────────────
+# xpg configuration sample
+#────────────────────────────────────
+# Copy this file to xpg.config.yml and fill in your credentials.
+# Environment variables are interpolated with <ENV.VAR_NAME> syntax.
+
+POSTGRES:
+DB:
+"main":
+NAME: my_database
+HOST: <ENV.DB_HOST>
+USER: <ENV.DB_USER>
+PASS: <ENV.DB_PASS>
+PORT: <ENV.DB_PORT>
+PREF: app_
+PATH: [database]
+
+CUSTOM_FIELDS:
+"id":
+Type: serial
+Key: PRI
+"str":
+Type: varchar(64)
+"text":
+Type: text
+"int":
+Type: integer
+"float":
+Type: real
+"date":
+Type: timestamp
+"email":
+Type: varchar(128)
+"phone":
+Type: varchar(11)
+"now":
+Type: timestamp
+Default: now()
+"pid":
+Type: varchar(12)
+Key: UNI
+Default: '"left"(md5((random())::text), 12)'

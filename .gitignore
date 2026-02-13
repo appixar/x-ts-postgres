@@ -1,0 +1,18 @@
+node_modules/
+dist/
+*.js
+*.d.ts
+*.map
+
+# Config with credentials
+xpg.config.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
