@@ -1,5 +1,5 @@
 #────────────────────────────────────
-# xpg configuration sample
+# xpg configuration sample!
 #────────────────────────────────────
 # Copy this file to xpg.config.yml and fill in your credentials.
 # Environment variables are interpolated with <ENV.VAR_NAME> syntax.
