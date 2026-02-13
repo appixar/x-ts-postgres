@@ -3,6 +3,7 @@ dist/
 *.js
 *.d.ts
 *.map
+npm_recovery_codes.txt
 
 # Config with credentials
 xpg.config.yml

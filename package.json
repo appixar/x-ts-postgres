@@ -1,5 +1,5 @@
 {
-    "name": "xpg",
+    "name": "@appixar/xpg",
     "version": "1.0.0",
     "description": "YAML-driven PostgreSQL schema management, diff-based migrations, and query service",
     "type": "module",
