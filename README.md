@@ -31,7 +31,7 @@ npx xpg init
 
 This creates:
 
-- `xpg.config.yml` — Database connection and custom field types
+- `xpg.config.yml` — Database connection and custom field types (or x-postgres.config.yml)
 - `database/example.yml` — Sample table definition
 
 ### 2. Configure

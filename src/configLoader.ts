@@ -240,9 +240,20 @@ export function loadConfig(configPath?: string): LoadedConfig {
 
 /**
  * Resolve database schema paths from config.
- * Handles both absolute paths and paths relative to configDir.
+ * Tries: absolute → relative to configDir → relative to CWD.
+ * This ensures paths work regardless of where the config file was discovered.
  */
 export function resolveSchemaPath(pathEntry: string, configDir: string): string {
     if (pathEntry.startsWith('/')) return pathEntry;
-    return resolve(configDir, pathEntry);
+
+    // Try relative to config dir first
+    const fromConfig = resolve(configDir, pathEntry);
+    if (existsSync(fromConfig)) return fromConfig;
+
+    // Fallback: try relative to CWD (common when config is auto-discovered in a subdir)
+    const fromCwd = resolve(process.cwd(), pathEntry);
+    if (existsSync(fromCwd)) return fromCwd;
+
+    // Return configDir-relative path (will fail gracefully later with "dir not found")
+    return fromConfig;
 }
