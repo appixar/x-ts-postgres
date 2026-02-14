@@ -1,6 +1,6 @@
 {
     "name": "@appixar/xpg",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "YAML-driven PostgreSQL schema management, diff-based migrations, and query service",
     "type": "module",
     "main": "./dist/index.js",
