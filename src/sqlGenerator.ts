@@ -5,7 +5,6 @@
 
 import type { ParsedSchema, QueuedQuery } from './types.js';
 import { buildDefaultClause } from './defaultNormalizer.js';
-import * as log from './logger.js';
 
 /**
  * Generate CREATE TABLE + all related indexes/constraints for a new table.
@@ -16,11 +15,9 @@ import * as log from './logger.js';
  */
 export function generateCreateTable(
     table: string,
-    schema: ParsedSchema,
-    mute: boolean
+    schema: ParsedSchema
 ): QueuedQuery[] {
     const queries: QueuedQuery[] = [];
-    if (!mute) log.header(`∴ ${table}`, 'blue');
 
     const { fields, individualIndexes, compositeIndexes, compositeUniqueIndexes } = schema;
 
@@ -51,41 +48,57 @@ export function generateCreateTable(
     }
 
     const createSql = `CREATE TABLE "${table}" (\n${colDefs.join(',\n')}\n);`;
-    queries.push({ sql: createSql, mini: `CREATE TABLE "${table}" ...`, color: 'green' });
-    if (!mute) log.say(`→ ${createSql}`, 'green');
+    queries.push({
+        sql: createSql,
+        table,
+        type: 'CREATE_TABLE',
+        description: `Create table ${table}`
+    });
 
     // ─── UNIQUE constraints ───
     for (const field of uniqueFields) {
         const sql = `ALTER TABLE "${table}" ADD CONSTRAINT "${table}_${field}_unique" UNIQUE ("${field}");`;
-        const mini = `ADD UNIQUE "${table}_${field}_unique" ...`;
-        queries.push({ sql, mini, color: 'cyan' });
-        if (!mute) log.say(`→ ${sql}`, 'cyan');
+        queries.push({
+            sql,
+            table,
+            type: 'ADD_INDEX',
+            description: `Add unique constraint ${table}_${field}_unique`
+        });
     }
 
     // ─── Individual indexes ───
     for (const field of individualIndexes) {
         const sql = `CREATE INDEX CONCURRENTLY "${table}_${field}_idx" ON "${table}" ("${field}");`;
-        const mini = `ADD INDEX "${table}_${field}_idx" ...`;
-        queries.push({ sql, mini, color: 'cyan' });
-        if (!mute) log.say(`→ ${sql}`, 'cyan');
+        queries.push({
+            sql,
+            table,
+            type: 'ADD_INDEX',
+            description: `Add index ${table}_${field}_idx`
+        });
     }
 
     // ─── Composite indexes ───
     for (const [indexName, columns] of Object.entries(compositeIndexes)) {
         const colsStr = columns.map(c => `"${c}"`).join(', ');
         const sql = `CREATE INDEX CONCURRENTLY "${table}_${indexName}_idx" ON "${table}" (${colsStr});`;
-        const mini = `ADD INDEX "${table}_${indexName}_idx" ...`;
-        queries.push({ sql, mini, color: 'cyan' });
-        if (!mute) log.say(`→ ${sql}`, 'cyan');
+        queries.push({
+            sql,
+            table,
+            type: 'ADD_INDEX',
+            description: `Add composite index ${table}_${indexName}_idx`
+        });
     }
 
     // ─── Composite unique indexes ───
     for (const [indexName, columns] of Object.entries(compositeUniqueIndexes)) {
         const colsStr = columns.map(c => `"${c}"`).join(', ');
         const sql = `CREATE UNIQUE INDEX CONCURRENTLY "${table}_${indexName}_unique_idx" ON "${table}" (${colsStr});`;
-        const mini = `ADD UNIQUE INDEX "${table}_${indexName}_unique_idx" ...`;
-        queries.push({ sql, mini, color: 'cyan' });
-        if (!mute) log.say(`→ ${sql}`, 'cyan');
+        queries.push({
+            sql,
+            table,
+            type: 'ADD_INDEX',
+            description: `Add unique composite index ${table}_${indexName}_unique_idx`
+        });
     }
 
     return queries;
@@ -94,19 +107,23 @@ export function generateCreateTable(
 /**
  * Generate DROP TABLE CASCADE statement.
  */
-export function generateDropTable(table: string, mute: boolean): QueuedQuery {
-    if (!mute) log.header(`∴ ${table}`, 'blue');
-    const sql = `DROP TABLE IF EXISTS "${table}" CASCADE;`;
-    const mini = `DROP TABLE "${table}" ...`;
-    if (!mute) log.say(`→ ${sql}`, 'yellow');
-    return { sql, mini, color: 'yellow' };
+export function generateDropTable(table: string): QueuedQuery {
+    return {
+        sql: `DROP TABLE IF EXISTS "${table}" CASCADE;`,
+        table,
+        type: 'DROP_TABLE',
+        description: `Drop table ${table}`
+    };
 }
 
 /**
  * Generate CREATE DATABASE statement.
  */
 export function generateCreateDatabase(name: string): QueuedQuery {
-    const sql = `CREATE DATABASE "${name}" ENCODING 'UTF8';`;
-    const mini = `CREATE DATABASE "${name}" ...`;
-    return { sql, mini, color: 'green' };
+    return {
+        sql: `CREATE DATABASE "${name}" ENCODING 'UTF8';`,
+        table: '',
+        type: 'CREATE_DB',
+        description: `Create database ${name}`
+    };
 }

@@ -7,7 +7,6 @@
 import type { ParsedSchema, DbColumnInfo, QueuedQuery } from './types.js';
 import { POSTGRES_TYPE_DICTIONARY } from './typeDictionary.js';
 import { buildDefaultClause, normalizeDbDefaultForCompare } from './defaultNormalizer.js';
-import * as log from './logger.js';
 
 interface DbIndexRow { indexname: string }
 interface DbConstraintRow { conname: string }
@@ -18,16 +17,14 @@ export interface DiffContext {
     currentColumns: Record<string, DbColumnInfo>;
     existingIndexes: DbIndexRow[];
     existingUniques: DbConstraintRow[];
-    mute: boolean;
 }
 
 /**
  * Generate ALTER statements to bring a live table in sync with YAML schema.
  */
 export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
-    const { table, schema, currentColumns, existingIndexes, existingUniques, mute } = ctx;
+    const { table, schema, currentColumns, existingIndexes, existingUniques } = ctx;
     const queries: QueuedQuery[] = [];
-    if (!mute) log.header(`∴ ${table}`, 'blue');
 
     const { fields, individualIndexes, compositeIndexes, compositeUniqueIndexes } = schema;
 
@@ -62,8 +59,12 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
     for (const column of Object.keys(currentColumns)) {
         if (!fields[column]) {
             const sql = `ALTER TABLE "${table}" DROP COLUMN "${column}";`;
-            queries.push({ sql, mini: `DROP COLUMN "${table}"."${column}" ...`, color: 'yellow' });
-            if (!mute) log.say(`→ ${sql}`, 'yellow');
+            queries.push({
+                sql,
+                table,
+                type: 'DROP_COLUMN',
+                description: `Drop column ${column}`
+            });
         }
     }
 
@@ -71,8 +72,12 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
     for (const uniqueName of existingUniqueNames) {
         if (!expectedUniqueNames.includes(uniqueName)) {
             const sql = `ALTER TABLE "${table}" DROP CONSTRAINT "${uniqueName}";`;
-            queries.push({ sql, mini: `DROP CONSTRAINT "${uniqueName}" ...`, color: 'yellow' });
-            if (!mute) log.say(`→ ${sql}`, 'yellow');
+            queries.push({
+                sql,
+                table,
+                type: 'RAW',
+                description: `Drop unique constraint ${uniqueName}`
+            });
         }
     }
 
@@ -80,8 +85,12 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
     for (const indexName of existingIndexNames) {
         if (!expectedIndexes.includes(indexName)) {
             const sql = `DROP INDEX IF EXISTS "${indexName}";`;
-            queries.push({ sql, mini: `DROP INDEX "${indexName}" ...`, color: 'yellow' });
-            if (!mute) log.say(`→ ${sql}`, 'yellow');
+            queries.push({
+                sql,
+                table,
+                type: 'DROP_INDEX',
+                description: `Drop index ${indexName}`
+            });
         }
     }
 
@@ -94,8 +103,12 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
                 defaultClause = buildDefaultClause(v.defaultValue, typeUpper);
             }
             const sql = `ALTER TABLE "${table}" ADD COLUMN "${k}" ${typeUpper} ${v.nullable} ${defaultClause} ${v.extra};`.replace(/\s+/g, ' ').trim();
-            queries.push({ sql, mini: `ADD COLUMN "${table}"."${k}" ...`, color: 'cyan' });
-            if (!mute) log.say(`→ ${sql}`, 'cyan');
+            queries.push({
+                sql,
+                table,
+                type: 'ADD_COLUMN',
+                description: `Add column ${k} (${typeUpper})`
+            });
         }
     }
 
@@ -114,8 +127,12 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
 
         if (mappedConfigType !== dbType) {
             const sql = `ALTER TABLE "${table}" ALTER COLUMN "${k}" TYPE ${v.type};`;
-            queries.push({ sql, mini: `ALTER TYPE "${table}"."${k}" → ${v.type} ...`, color: 'cyan' });
-            if (!mute) log.say(`→ ${sql}`, 'cyan');
+            queries.push({
+                sql,
+                table,
+                type: 'ALTER_COLUMN',
+                description: `Change type of ${k} to ${v.type}`
+            });
         } else if (configLength !== null) {
             // For numeric/decimal, compare precision+scale from numeric_precision/numeric_scale
             const isNumericType = ['numeric', 'decimal'].includes(dbType) || ['NUMERIC', 'DECIMAL'].includes(configBaseType);
@@ -127,13 +144,21 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
                 const scaleMismatch = cfgScale && dbScale !== null && String(dbScale) !== cfgScale;
                 if (precisionMismatch || scaleMismatch) {
                     const sql = `ALTER TABLE "${table}" ALTER COLUMN "${k}" TYPE ${v.type};`;
-                    queries.push({ sql, mini: `ALTER TYPE "${table}"."${k}" → ${v.type} ...`, color: 'cyan' });
-                    if (!mute) log.say(`→ ${sql}`, 'cyan');
+                    queries.push({
+                        sql,
+                        table,
+                        type: 'ALTER_COLUMN',
+                        description: `Change precision of ${k} to ${v.type}`
+                    });
                 }
             } else if (dbLength !== null && String(dbLength) !== configLength.split(',')[0]) {
                 const sql = `ALTER TABLE "${table}" ALTER COLUMN "${k}" TYPE ${v.type};`;
-                queries.push({ sql, mini: `ALTER TYPE "${table}"."${k}" → ${v.type} ...`, color: 'cyan' });
-                if (!mute) log.say(`→ ${sql}`, 'cyan');
+                queries.push({
+                    sql,
+                    table,
+                    type: 'ALTER_COLUMN',
+                    description: `Change length of ${k} to ${v.type}`
+                });
             }
         }
     }
@@ -163,16 +188,24 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
         // YAML has no default but DB does → DROP
         if (cfgDefaultNorm === '' && dbDefaultNorm !== '') {
             const sql = `ALTER TABLE "${table}" ALTER COLUMN "${k}" DROP DEFAULT;`;
-            queries.push({ sql, mini: `DROP DEFAULT "${table}"."${k}" ...`, color: 'cyan' });
-            if (!mute) log.say(`→ ${sql}`, 'cyan');
+            queries.push({
+                sql,
+                table,
+                type: 'ALTER_COLUMN',
+                description: `Drop default on ${k}`
+            });
             continue;
         }
 
         // YAML has default but differs from DB → SET
         if (cfgDefaultNorm !== '' && dbDefaultNorm !== cfgDefaultNorm) {
             const sql = `ALTER TABLE "${table}" ALTER COLUMN "${k}" SET DEFAULT ${configDefaultSql};`;
-            queries.push({ sql, mini: `SET DEFAULT "${table}"."${k}" ...`, color: 'cyan' });
-            if (!mute) log.say(`→ ${sql}`, 'cyan');
+            queries.push({
+                sql,
+                table,
+                type: 'ALTER_COLUMN',
+                description: `Set default on ${k}`
+            });
         }
     }
 
@@ -189,12 +222,20 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
 
         if (yamlWantsNotNull && !dbIsNotNull) {
             const sql = `ALTER TABLE "${table}" ALTER COLUMN "${k}" SET NOT NULL;`;
-            queries.push({ sql, mini: `SET NOT NULL "${table}"."${k}" ...`, color: 'cyan' });
-            if (!mute) log.say(`→ ${sql}`, 'cyan');
+            queries.push({
+                sql,
+                table,
+                type: 'ALTER_COLUMN',
+                description: `Set NOT NULL on ${k}`
+            });
         } else if (!yamlWantsNotNull && dbIsNotNull) {
             const sql = `ALTER TABLE "${table}" ALTER COLUMN "${k}" DROP NOT NULL;`;
-            queries.push({ sql, mini: `DROP NOT NULL "${table}"."${k}" ...`, color: 'cyan' });
-            if (!mute) log.say(`→ ${sql}`, 'cyan');
+            queries.push({
+                sql,
+                table,
+                type: 'ALTER_COLUMN',
+                description: `Drop NOT NULL on ${k}`
+            });
         }
     }
 
@@ -203,8 +244,12 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
         const indexName = `${table}_${field}_idx`;
         if (!existingIndexNames.includes(indexName)) {
             const sql = `CREATE INDEX CONCURRENTLY "${indexName}" ON "${table}" ("${field}");`;
-            queries.push({ sql, mini: `ADD INDEX "${indexName}" ...`, color: 'cyan' });
-            if (!mute) log.say(`→ ${sql}`, 'cyan');
+            queries.push({
+                sql,
+                table,
+                type: 'ADD_INDEX',
+                description: `Add index ${indexName}`
+            });
         }
     }
 
@@ -214,8 +259,12 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
         if (!existingIndexNames.includes(fullName)) {
             const colsStr = columns.map(c => `"${c}"`).join(', ');
             const sql = `CREATE INDEX CONCURRENTLY "${fullName}" ON "${table}" (${colsStr});`;
-            queries.push({ sql, mini: `ADD INDEX "${fullName}" ...`, color: 'cyan' });
-            if (!mute) log.say(`→ ${sql}`, 'cyan');
+            queries.push({
+                sql,
+                table,
+                type: 'ADD_INDEX',
+                description: `Add composite index ${fullName}`
+            });
         }
     }
 
@@ -225,8 +274,12 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
         if (!existingIndexNames.includes(fullName)) {
             const colsStr = columns.map(c => `"${c}"`).join(', ');
             const sql = `CREATE UNIQUE INDEX CONCURRENTLY "${fullName}" ON "${table}" (${colsStr});`;
-            queries.push({ sql, mini: `ADD UNIQUE INDEX "${fullName}" ...`, color: 'cyan' });
-            if (!mute) log.say(`→ ${sql}`, 'cyan');
+            queries.push({
+                sql,
+                table,
+                type: 'ADD_INDEX',
+                description: `Add unique composite index ${fullName}`
+            });
         }
     }
 
@@ -236,15 +289,14 @@ export function generateUpdateTable(ctx: DiffContext): QueuedQuery[] {
             const uniqueName = `${table}_${k}_unique`;
             if (!existingUniqueNames.includes(uniqueName)) {
                 const sql = `ALTER TABLE "${table}" ADD CONSTRAINT "${uniqueName}" UNIQUE ("${k}");`;
-                queries.push({ sql, mini: `ADD UNIQUE "${uniqueName}" ...`, color: 'cyan' });
-                if (!mute) log.say(`→ ${sql}`, 'cyan');
+                queries.push({
+                    sql,
+                    table,
+                    type: 'ADD_INDEX',
+                    description: `Add unique constraint ${uniqueName}`
+                });
             }
         }
-    }
-
-    // ─── Status ───
-    if (queries.length === 0 && !mute) {
-        log.say('✓ Table is up to date');
     }
 
     return queries;

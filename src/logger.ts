@@ -11,15 +11,11 @@ import type { LogColor } from './types.js';
 
 let activeSpinner: Ora | null = null;
 
-/**
- * Check if color output is disabled.
- * Respects NO_COLOR standard (https://no-color.org/) and --no-color CLI flag.
- */
 function isColorDisabled(): boolean {
     return 'NO_COLOR' in process.env || process.argv.includes('--no-color');
 }
 
-const colorFns: Record<LogColor, (s: string) => string> = {
+export const colorFns: Record<LogColor, (s: string) => string> = {
     green: (s) => isColorDisabled() ? s : chalk.green(s),
     yellow: (s) => isColorDisabled() ? s : chalk.yellow(s),
     cyan: (s) => isColorDisabled() ? s : chalk.cyan(s),
@@ -30,9 +26,6 @@ const colorFns: Record<LogColor, (s: string) => string> = {
     white: (s) => isColorDisabled() ? s : chalk.white(s),
 };
 
-/**
- * Stop the active spinner if it exists.
- */
 export function stopSpinner(): void {
     if (activeSpinner) {
         activeSpinner.stop();
@@ -40,25 +33,19 @@ export function stopSpinner(): void {
     }
 }
 
-/**
- * Start a spinner with a message.
- */
 export function spin(text: string): void {
     stopSpinner();
     if (!isColorDisabled()) {
         activeSpinner = ora({
             text,
             color: 'cyan',
-            spinner: 'dots' // Elegant dots
+            spinner: 'dots'
         }).start();
     } else {
         console.log(`[wait] ${text}`);
     }
 }
 
-/**
- * Succeed the current spinner or print a success message.
- */
 export function succeed(text: string): void {
     if (activeSpinner) {
         activeSpinner.succeed(chalk.green(text));
@@ -68,9 +55,6 @@ export function succeed(text: string): void {
     }
 }
 
-/**
- * Fail the current spinner or print an error message.
- */
 export function fail(text: string): void {
     if (activeSpinner) {
         activeSpinner.fail(chalk.red(text));
@@ -80,9 +64,6 @@ export function fail(text: string): void {
     }
 }
 
-/**
- * Print a nice welcome banner.
- */
 export function welcome(): void {
     if (isColorDisabled()) return;
 
@@ -95,32 +76,17 @@ export function welcome(): void {
     }));
 }
 
-/**
- * Print a section header with a separator line.
- */
-export function header(text: string, color: LogColor = 'green'): void {
-    stopSpinner(); // Stop any overlapping spinner
-    const colorize = colorFns[color] ?? colorFns.green;
-    console.log('');
-    console.log(colorize('● ' + text));
-    console.log('');
+export function header(text: string, color: LogColor = 'cyan'): void {
+    stopSpinner();
+    const colorize = colorFns[color] ?? colorFns.cyan;
+    console.log('\n' + colorize(chalk.bold(text)) + '\n');
 }
 
-/**
- * Print a message, optionally colored.
- */
 export function say(text: string, color?: LogColor): void {
     if (activeSpinner) {
-        // If spinner is active, stop it, print, and restart? 
-        // Or just stop it for a moment. 
-        // Better: stop, print info, leave stopped?
-        // Actually ora handles console.log but it's cleaner to stop.
         activeSpinner.stop();
-        // We won't restart it here automatically as 'say' is usually a discrete event.
-        // If the caller wants the spinner back, they should call spin() again.
         activeSpinner = null;
     }
-
     if (color && colorFns[color]) {
         console.log(colorFns[color](text));
     } else {
@@ -128,16 +94,10 @@ export function say(text: string, color?: LogColor): void {
     }
 }
 
-/**
- * Print a success message (green).
- */
 export function success(text: string): void {
     succeed(text);
 }
 
-/**
- * Print a warning message (yellow).
- */
 export function warn(text: string): void {
     if (activeSpinner) {
         activeSpinner.warn(chalk.yellow(text));
@@ -147,17 +107,29 @@ export function warn(text: string): void {
     }
 }
 
-/**
- * Print an error message (red).
- */
 export function error(text: string): void {
     fail(text);
 }
 
-/**
- * Print a step message (blue arrow).
- */
 export function step(text: string): void {
     stopSpinner();
     console.log(chalk.blue(`➜ ${text}`));
+}
+
+// ─── Semantic Loggers ───
+
+export function added(text: string): void {
+    console.log(chalk.green(`+ ${text}`));
+}
+
+export function removed(text: string): void {
+    console.log(chalk.red(`- ${text}`));
+}
+
+export function changed(text: string): void {
+    console.log(chalk.yellow(`~ ${text}`));
+}
+
+export function info(text: string): void {
+    console.log(chalk.blue(`i ${text}`));
 }

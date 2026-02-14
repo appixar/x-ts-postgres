@@ -75,9 +75,12 @@ export interface DbColumnInfo {
 /** Valid colors for terminal output */
 export type LogColor = 'green' | 'yellow' | 'cyan' | 'gray' | 'red' | 'magenta' | 'blue' | 'white';
 
+export type QueryType = 'CREATE_TABLE' | 'DROP_TABLE' | 'ALTER_COLUMN' | 'ADD_COLUMN' | 'DROP_COLUMN' | 'ADD_INDEX' | 'DROP_INDEX' | 'RAW' | 'CREATE_DB';
+
 /** A queued SQL action */
 export interface QueuedQuery {
     sql: string;
-    mini: string;
-    color: LogColor;
+    table: string;
+    type: QueryType;
+    description: string;
 }
