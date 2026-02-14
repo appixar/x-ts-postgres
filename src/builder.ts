@@ -215,15 +215,15 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
                     wordWrap: true
                 });
 
-                // Group by table for cleaner output? 
-                // Actually the order matters for execution, but for display we can group visually
-                // if we strictly follow order. But simple listing is fine too.
                 for (const q of allQueries) {
                     let typeColor = 'white';
-                    if (q.type.includes('DROP')) typeColor = 'red';
-                    if (q.type.includes('ADD')) typeColor = 'green';
-                    if (q.type.includes('ALTER')) typeColor = 'yellow';
-                    if (q.type.includes('CREATE')) typeColor = 'magenta';
+                    if (q.type === 'DROP_TABLE' || q.type === 'DROP_COLUMN' || q.type === 'DROP_INDEX') {
+                        typeColor = 'yellow'; // User requested yellow for DROP
+                    } else if (q.type === 'CREATE_TABLE' || q.type === 'CREATE_DB') {
+                        typeColor = 'green';  // User requested green for CREATE
+                    } else {
+                        typeColor = 'cyan';   // User requested blue (using cyan for visibility) for ADD/ALTER
+                    }
 
                     // @ts-ignore
                     table.push([q.table, { content: q.type, style: { 'padding-left': 1, 'color': typeColor } }, q.description]);
@@ -257,7 +257,14 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
                         if (!mute) log.fail(`Failed: ${q.description} \n ${errMsg}`);
                     }
                 }
-                if (!mute) log.succeed('All changes applied successfully');
+
+                if (!mute) {
+                    if (result.failed.length > 0) {
+                        log.warn(`Finished with errors: ${result.executed} executed, ${result.failed.length} failed.`);
+                    } else {
+                        log.succeed('All changes applied successfully');
+                    }
+                }
             }
         } else {
             if (!mute) log.succeed('Database is up to date.');

@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { up } from './builder.js';
+import { runQuery } from './queryRunner.js';
 import * as log from './logger.js';
 
 const program = new Command();
@@ -33,13 +34,37 @@ program
   .option('--config <path>', 'Path to config file (default: xpg.config.yml)')
   .action(async (opts) => {
     try {
-      await up({
+      const result = await up({
         create: opts.create,
         name: opts.name,
         tenant: opts.tenant,
         mute: opts.mute,
         dry: opts.dry,
         dropOrphans: opts.dropOrphans,
+        config: opts.config,
+      });
+
+      if (result.failed.length > 0) {
+        process.exit(1);
+      }
+    } catch (err) {
+      log.error((err as Error).message);
+      process.exit(1);
+    }
+  });
+
+// ─── query command ───
+program
+  .command('query <sql>')
+  .description('Execute a raw SQL query')
+  .option('--name <db>', 'Target specific database cluster by NAME')
+  .option('--tenant <key>', 'Target specific tenant key')
+  .option('--config <path>', 'Path to config file')
+  .action(async (sql, opts) => {
+    try {
+      await runQuery(sql, {
+        name: opts.name,
+        tenant: opts.tenant,
         config: opts.config,
       });
     } catch (err) {
