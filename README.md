@@ -6,7 +6,7 @@ Define your database tables in simple YAML files, and **xpg** automatically crea
 
 ## Features
 
-- **YAML Schema DSL** — Define tables with a concise, human-readable syntax!
+- **YAML Schema DSL** — Define tables with a concise, human-readable syntax.
 - **Diff-based migrations** — Automatically detects changes and generates `ALTER TABLE` statements
 - **Custom field types** — Create reusable type aliases (`id`, `str`, `email`, etc.)
 - **Read/write splitting** — Route queries to read replicas automatically
