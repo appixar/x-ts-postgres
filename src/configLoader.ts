@@ -9,6 +9,9 @@ import { resolve, dirname, basename } from 'node:path';
 import YAML from 'yaml';
 import type { PostgresConfig, CustomFieldDef } from './types.js';
 
+/** Accepted config file names (checked in order) */
+const CONFIG_FILENAMES = ['xpg.config.yml', 'x-postgres.config.yml'];
+
 /** Directories to skip when searching for config files */
 const SKIP_DIRS = new Set([
     'node_modules', 'dist', 'build', 'public', 'tmp', 'temp',
@@ -50,15 +53,18 @@ function loadDotEnv(dir: string): void {
 }
 
 /**
- * Search for xpg.config.yml recursively in a directory.
+ * Search for config file recursively in a directory.
+ * Checks both xpg.config.yml and x-postgres.config.yml.
  * Skips directories in SKIP_DIRS and dot-directories.
  * Returns the first match found, or undefined.
  */
 function findConfigInDir(dir: string, maxDepth: number = 3, depth: number = 0): string | undefined {
     if (depth > maxDepth) return undefined;
 
-    const target = resolve(dir, 'xpg.config.yml');
-    if (existsSync(target)) return target;
+    for (const name of CONFIG_FILENAMES) {
+        const target = resolve(dir, name);
+        if (existsSync(target)) return target;
+    }
 
     if (depth >= maxDepth) return undefined;
 
@@ -92,12 +98,16 @@ function findConfigInDir(dir: string, maxDepth: number = 3, depth: number = 0): 
  */
 function discoverConfigFile(cwd: string): string | undefined {
     // 1. Root
-    const root = resolve(cwd, 'xpg.config.yml');
-    if (existsSync(root)) return root;
+    for (const name of CONFIG_FILENAMES) {
+        const root = resolve(cwd, name);
+        if (existsSync(root)) return root;
+    }
 
     // 2. config/
-    const configDir = resolve(cwd, 'config', 'xpg.config.yml');
-    if (existsSync(configDir)) return configDir;
+    for (const name of CONFIG_FILENAMES) {
+        const configDir = resolve(cwd, 'config', name);
+        if (existsSync(configDir)) return configDir;
+    }
 
     // 3. src/ (recursive)
     const srcDir = resolve(cwd, 'src');
