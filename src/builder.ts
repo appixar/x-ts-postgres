@@ -7,14 +7,14 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import YAML from 'yaml';
-import * as readline from 'node:readline';
+import { confirm } from '@inquirer/prompts';
 import { loadConfig, resolveSchemaPath, type LoadedConfig } from './configLoader.js';
 import { parseSchema } from './schemaParser.js';
 import { generateCreateTable, generateDropTable, generateCreateDatabase } from './sqlGenerator.js';
 import { generateUpdateTable, type DiffContext } from './diffEngine.js';
 import { PgService } from './pgService.js';
 import * as log from './logger.js';
-import type { QueuedQuery, DbColumnInfo, DbNodeConfig } from './types.js';
+import type { QueuedQuery, DbColumnInfo } from './types.js';
 
 export interface BuilderOptions {
     mute?: boolean;
@@ -34,19 +34,6 @@ export interface MigrationResult {
 }
 
 /**
- * Prompt the user for yes/no confirmation.
- */
-async function promptConfirm(message: string): Promise<boolean> {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    return new Promise(resolve => {
-        rl.question(message, answer => {
-            rl.close();
-            resolve(answer.trim() === '1' || answer.trim().toLowerCase() === 'y');
-        });
-    });
-}
-
-/**
  * Run the full database migration flow.
  */
 export async function up(options: BuilderOptions = {}): Promise<MigrationResult> {
@@ -56,9 +43,12 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
 
     // Load config
     let cfg: LoadedConfig;
+    if (!mute) log.spin('Loading configuration...');
     try {
         cfg = loadConfig(options.config);
+        if (!mute) log.stopSpinner();
     } catch (err) {
+        if (!mute) log.fail('Failed to load config');
         const msg = (err as Error).message;
         throw new Error(`Config error: ${msg}. Please verify your xpg.config.yml or config/postgres.yml`);
     }
@@ -79,7 +69,7 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
             if (options.name !== writeNode.NAME && !writeNode.TENANT_KEYS) continue;
         }
 
-        if (!mute) log.say(`\n► PostgreSQL '${dbId}' ...`, 'cyan');
+        if (!mute) log.header(`${dbId}`, 'cyan');
 
         // Resolve schema paths
         let databasePaths: string[] = [];
@@ -93,6 +83,7 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
         }
 
         // Connect
+        if (!mute) log.spin('Connecting to database...');
         const pg = new PgService(dbConf, dbId);
         const allQueries: QueuedQuery[] = [];
         let createDbCount = 0;
@@ -105,33 +96,35 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
                 if (res.rows.length === 0) {
                     const q = generateCreateDatabase(writeNode.NAME);
                     allQueries.push(q);
-                    if (!mute) log.say(`→ ${q.sql}`, 'green');
+                    if (!mute) log.step(`Database '${writeNode.NAME}' will be created`);
                     createDbCount++;
                 }
             } catch (err) {
-                log.error(`Failed to check database existence: ${(err as Error).message}`);
+                log.warn(`Failed to check database existence: ${(err as Error).message}`);
             }
         }
+        if (!mute) log.stopSpinner();
 
         // Skip schema processing if we're only creating the database
         if (createDbCount > 0 && allQueries.length > 0) {
             // Execute create database first, then re-run
             if (!dryRun) {
                 if (!mute) {
-                    console.log('');
-                    const ok = await promptConfirm('Create database first? (1: Yes, 0: No): ');
+                    const ok = await confirm({ message: 'Create database first?', default: true });
                     if (!ok) { log.warn('Aborting!'); continue; }
                 }
                 const adminPool = pg.getAdminPool();
+                if (!mute) log.spin('Creating database...');
                 for (const q of allQueries) {
                     await adminPool.query(q.sql);
                 }
-                if (!mute) log.success(`Database created. Re-running schema migration...`);
+                if (!mute) log.succeed(`Database created. Re-running schema migration...`);
                 allQueries.length = 0;
             }
         }
 
         // Get existing tables
+        if (!mute) log.spin('Analyzing database structure...');
         let tablesReal: string[] = [];
         try {
             const t = await pg.query<{ table_name: string }>(
@@ -150,19 +143,21 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
 
             const files = readdirSync(schemaDir).filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
 
+            if (!mute) log.spin(`Reading ${files.length} schema files in ${schemaDir}...`);
+
             for (const fn of files) {
                 const fp = join(schemaDir, fn);
-                if (!mute) log.say(`❍ Processing: ${fp}`, 'magenta');
+                // if (!mute) log.say(`❍ Processing: ${fp}`, 'magenta');
 
                 let data: Record<string, Record<string, string>>;
                 try {
                     data = YAML.parse(readFileSync(fp, 'utf-8'));
                     if (!data || typeof data !== 'object') {
-                        if (!mute) log.warn('⚠ Invalid file format. Ignored.');
+                        if (!mute) log.warn(`⚠ Invalid file format: ${fn}. Ignored.`);
                         continue;
                     }
                 } catch {
-                    if (!mute) log.warn('⚠ Failed to parse YAML. Ignored.');
+                    if (!mute) log.warn(`⚠ Failed to parse YAML: ${fn}. Ignored.`);
                     continue;
                 }
 
@@ -216,10 +211,7 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
 
                                 allQueries.push(...generateUpdateTable(diffCtx));
                             } else {
-                                if (!mute) {
-                                    log.header(`∴ ${tableName}`, 'blue');
-                                    log.say('✓ Table is up to date');
-                                }
+                                // Table exists but no columns found? Rare.
                             }
                         } catch (err) {
                             log.error(`Error reading table ${tableName}: ${(err as Error).message}`);
@@ -231,6 +223,7 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
                 }
             }
         }
+        if (!mute) log.stopSpinner();
 
         // ─── DROP tables not in YAML (opt-in via --drop-orphans) ───
         if (options.dropOrphans) {
@@ -243,23 +236,23 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
             const orphans = tablesReal.filter(t => !tablesNew.includes(t));
             if (orphans.length > 0) {
                 log.warn(`⚠ ${orphans.length} table(s) in DB but not in YAML: ${orphans.join(', ')}`);
-                log.warn('  Use --drop-orphans to drop them.');
+                log.say('  Use --drop-orphans to drop them.', 'gray');
             }
         }
 
         // ─── Execute or show ───
         if (allQueries.length > 0) {
             if (!mute) {
-                log.say(`\n→ ${allQueries.length} requested actions for: ${dbId}`);
-                log.say('→ Please verify:');
+                log.say(`\n→ ${allQueries.length} changes identified.`, 'cyan');
+                // log.say('→ Please verify:');
                 for (const q of allQueries) {
-                    log.say(`  → ${q.mini}`, q.color);
+                    log.say(`  ${q.mini}`, q.color);
                 }
             }
 
             if (dryRun) {
                 if (!mute) {
-                    log.header('🔍 Dry run — no changes applied', 'yellow');
+                    log.header('Dry run — no changes applied', 'yellow');
                     for (const q of allQueries) {
                         log.say(q.sql, 'gray');
                     }
@@ -277,16 +270,14 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
                 }
             } else {
                 console.log('');
-                console.log('Are you sure you want to do this? ☝');
-                console.log('0: No');
-                console.log('1: Yes');
+                const ok = await confirm({ message: 'Apply these changes?', default: true });
 
-                const ok = await promptConfirm('Choose an option: ');
                 if (!ok) {
                     log.warn('Aborting!');
                     continue;
                 }
 
+                if (!mute) log.spin('Applying changes...');
                 for (const q of allQueries) {
                     try {
                         await pg.query(q.sql);
@@ -294,14 +285,17 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
                     } catch (err) {
                         const errMsg = (err as Error).message;
                         result.failed.push({ sql: q.sql, error: errMsg });
-                        log.error(`Failed: ${q.mini} — ${errMsg}`);
+                        log.fail(`Failed: ${q.mini} — ${errMsg}`);
                     }
                 }
+                if (!mute) log.succeed('Changes applied successfully');
             }
+        } else {
+            if (!mute) log.succeed('Database is up to date.');
         }
 
         result.total += allQueries.length;
-        log.header(`❤ Finished ${dbId}. Changes: ${allQueries.length}`);
+        // log.header(`❤ Finished ${dbId}. Changes: ${allQueries.length}`);
     }
 
     await PgService.closeAll();

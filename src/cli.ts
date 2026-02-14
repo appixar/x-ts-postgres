@@ -15,7 +15,10 @@ program
   .name('xpg')
   .description('YAML-driven PostgreSQL schema management & migrations')
   .version('1.0.0')
-  .option('--no-color', 'Disable colored output');
+  .option('--no-color', 'Disable colored output')
+  .hook('preAction', () => {
+    log.welcome();
+  });
 
 // ─── up command ───
 program
