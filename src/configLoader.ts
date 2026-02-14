@@ -4,10 +4,16 @@
 // Loads xpg.config.yml (or separate postgres.yml + custom_fields.yml)
 // with environment variable interpolation: <ENV.VAR> → process.env.VAR
 
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { resolve, dirname, basename } from 'node:path';
 import YAML from 'yaml';
 import type { PostgresConfig, CustomFieldDef } from './types.js';
+
+/** Directories to skip when searching for config files */
+const SKIP_DIRS = new Set([
+    'node_modules', 'dist', 'build', 'public', 'tmp', 'temp',
+    'coverage', 'test', 'tests', '__tests__', '.git',
+]);
 
 /**
  * Load variables from a .env file into process.env.
@@ -41,6 +47,82 @@ function loadDotEnv(dir: string): void {
             process.env[key] = val;
         }
     }
+}
+
+/**
+ * Search for xpg.config.yml recursively in a directory.
+ * Skips directories in SKIP_DIRS and dot-directories.
+ * Returns the first match found, or undefined.
+ */
+function findConfigInDir(dir: string, maxDepth: number = 3, depth: number = 0): string | undefined {
+    if (depth > maxDepth) return undefined;
+
+    const target = resolve(dir, 'xpg.config.yml');
+    if (existsSync(target)) return target;
+
+    if (depth >= maxDepth) return undefined;
+
+    try {
+        const entries = readdirSync(dir);
+        for (const entry of entries) {
+            if (SKIP_DIRS.has(entry) || entry.startsWith('.')) continue;
+            const full = resolve(dir, entry);
+            try {
+                if (statSync(full).isDirectory()) {
+                    const found = findConfigInDir(full, maxDepth, depth + 1);
+                    if (found) return found;
+                }
+            } catch { /* permission errors, etc. */ }
+        }
+    } catch { /* unreadable directory */ }
+
+    return undefined;
+}
+
+/**
+ * Find xpg.config.yml with smart discovery.
+ *
+ * Search order:
+ * 1. CWD root (direct check)
+ * 2. config/ subdirectory
+ * 3. src/ and subdirectories (recursive, max 3 levels)
+ * 4. All other directories in CWD (recursive, max 3 levels)
+ *
+ * Skips: node_modules, dist, build, public, tmp, coverage, test, .dot-dirs
+ */
+function discoverConfigFile(cwd: string): string | undefined {
+    // 1. Root
+    const root = resolve(cwd, 'xpg.config.yml');
+    if (existsSync(root)) return root;
+
+    // 2. config/
+    const configDir = resolve(cwd, 'config', 'xpg.config.yml');
+    if (existsSync(configDir)) return configDir;
+
+    // 3. src/ (recursive)
+    const srcDir = resolve(cwd, 'src');
+    if (existsSync(srcDir)) {
+        const found = findConfigInDir(srcDir);
+        if (found) return found;
+    }
+
+    // 4. All other directories (recursive)
+    try {
+        const entries = readdirSync(cwd);
+        for (const entry of entries) {
+            if (entry === 'src' || entry === 'config') continue; // already checked
+            if (SKIP_DIRS.has(entry) || entry.startsWith('.')) continue;
+            const full = resolve(cwd, entry);
+            try {
+                if (statSync(full).isDirectory()) {
+                    const found = findConfigInDir(full);
+                    if (found) return found;
+                }
+            } catch { /* skip */ }
+        }
+    } catch { /* skip */ }
+
+    return undefined;
 }
 
 /**
@@ -84,7 +166,7 @@ export interface LoadedConfig {
  *
  * Resolution order:
  * 1. `--config <path>` CLI argument → single file
- * 2. `xpg.config.yml` in CWD
+ * 2. Smart discovery: root → config/ → src/ → other dirs
  * 3. `config/postgres.yml` + `config/custom_fields.yml` (PHP-compatible layout)
  *
  * Automatically loads .env from CWD (and config dir if different).
@@ -103,25 +185,30 @@ export function loadConfig(configPath?: string): LoadedConfig {
         configDir = dirname(abs);
         // Also load .env from config dir if it differs from CWD
         if (configDir !== process.cwd()) loadDotEnv(configDir);
-    } else if (existsSync(resolve(process.cwd(), 'xpg.config.yml'))) {
-        const abs = resolve(process.cwd(), 'xpg.config.yml');
-        raw = YAML.parse(readFileSync(abs, 'utf-8')) ?? {};
-        configDir = dirname(abs);
     } else {
-        // Try PHP-compatible layout
-        const pgPath = resolve(process.cwd(), 'config/postgres.yml');
-        const cfPath = resolve(process.cwd(), 'config/custom_fields.yml');
+        // Smart discovery: search for xpg.config.yml
+        const discovered = discoverConfigFile(process.cwd());
 
-        if (existsSync(pgPath)) {
-            raw = YAML.parse(readFileSync(pgPath, 'utf-8')) ?? {};
-        }
-        if (existsSync(cfPath)) {
-            const cfRaw = YAML.parse(readFileSync(cfPath, 'utf-8')) ?? {};
-            // Merge custom fields into POSTGRES block
-            if (cfRaw?.POSTGRES?.CUSTOM_FIELDS && raw?.POSTGRES) {
-                (raw.POSTGRES as Record<string, unknown>).CUSTOM_FIELDS = cfRaw.POSTGRES.CUSTOM_FIELDS;
-            } else if (cfRaw?.POSTGRES?.CUSTOM_FIELDS) {
-                raw.POSTGRES = { CUSTOM_FIELDS: cfRaw.POSTGRES.CUSTOM_FIELDS };
+        if (discovered) {
+            raw = YAML.parse(readFileSync(discovered, 'utf-8')) ?? {};
+            configDir = dirname(discovered);
+            if (configDir !== process.cwd()) loadDotEnv(configDir);
+        } else {
+            // Fallback: PHP-compatible layout
+            const pgPath = resolve(process.cwd(), 'config/postgres.yml');
+            const cfPath = resolve(process.cwd(), 'config/custom_fields.yml');
+
+            if (existsSync(pgPath)) {
+                raw = YAML.parse(readFileSync(pgPath, 'utf-8')) ?? {};
+            }
+            if (existsSync(cfPath)) {
+                const cfRaw = YAML.parse(readFileSync(cfPath, 'utf-8')) ?? {};
+                // Merge custom fields into POSTGRES block
+                if (cfRaw?.POSTGRES?.CUSTOM_FIELDS && raw?.POSTGRES) {
+                    (raw.POSTGRES as Record<string, unknown>).CUSTOM_FIELDS = cfRaw.POSTGRES.CUSTOM_FIELDS;
+                } else if (cfRaw?.POSTGRES?.CUSTOM_FIELDS) {
+                    raw.POSTGRES = { CUSTOM_FIELDS: cfRaw.POSTGRES.CUSTOM_FIELDS };
+                }
             }
         }
     }
