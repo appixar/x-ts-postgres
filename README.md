@@ -30,6 +30,7 @@ npx xpg init
 ```
 
 This creates:
+
 - `xpg.config.yml` — Database connection and custom field types
 - `database/example.yml` — Sample table definition
 
@@ -97,6 +98,7 @@ npx xpg up
 ```
 
 xpg will automatically:
+
 - **Create** tables that don't exist
 - **Update** tables that changed (add/alter/drop columns, indexes, constraints)
 - Apply a table prefix if configured (e.g. `app_users`)
@@ -243,8 +245,8 @@ await db.update('app_users',
   'user_last_login < NOW() - INTERVAL \'30 days\''
 );
 
-// Close pools when done
-await db.closeAll();
+// Close all pools when done
+await PgService.closeAll();
 ```
 
 ### Named Parameters
@@ -261,6 +263,7 @@ const rows = await db.query(
 ### Read/Write Splitting
 
 `PgService` automatically routes:
+
 - **SELECT / SHOW / EXPLAIN / WITH** → read replica pool
 - **INSERT / UPDATE / DELETE / CREATE / ALTER** → write (primary) pool
 
@@ -322,7 +325,21 @@ HOST: <ENV.DB_HOST>
 PASS: <ENV.DB_PASS>
 ```
 
-If a variable is not defined, xpg will print a warning and use an empty string.
+**xpg automatically loads `.env` from your project root** — no need for `dotenv` or any extra setup. Just create a `.env` file:
+
+```bash
+DB_HOST=localhost
+DB_USER=admin
+DB_PASS=secret
+DB_PORT=5432
+```
+
+Rules:
+
+- System environment variables always take precedence over `.env`
+- Supports `export` prefix: `export DB_HOST=localhost`
+- Supports inline comments: `DB_HOST=localhost # my local db`
+- If a variable is not defined anywhere, xpg prints a warning and uses an empty string
 
 ---
 

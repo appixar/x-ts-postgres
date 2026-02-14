@@ -264,6 +264,17 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
                         log.say(q.sql, 'gray');
                     }
                 }
+            } else if (mute) {
+                // Programmatic mode: execute without prompting (no stdin available)
+                for (const q of allQueries) {
+                    try {
+                        await pg.query(q.sql);
+                        result.executed++;
+                    } catch (err) {
+                        const errMsg = (err as Error).message;
+                        result.failed.push({ sql: q.sql, error: errMsg });
+                    }
+                }
             } else {
                 console.log('');
                 console.log('Are you sure you want to do this? ☝');

@@ -10,6 +10,40 @@ import YAML from 'yaml';
 import type { PostgresConfig, CustomFieldDef } from './types.js';
 
 /**
+ * Load variables from a .env file into process.env.
+ * Does NOT overwrite variables that already exist in process.env.
+ */
+function loadDotEnv(dir: string): void {
+    const envPath = resolve(dir, '.env');
+    if (!existsSync(envPath)) return;
+
+    const content = readFileSync(envPath, 'utf-8');
+    for (const line of content.split('\n')) {
+        let trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        // Strip `export ` prefix (common in .env files)
+        if (trimmed.startsWith('export ')) trimmed = trimmed.slice(7).trim();
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx === -1) continue;
+        const key = trimmed.slice(0, eqIdx).trim();
+        let val = trimmed.slice(eqIdx + 1).trim();
+        // Strip surrounding quotes
+        if ((val.startsWith('"') && val.endsWith('"')) ||
+            (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+        } else {
+            // Strip inline comments (only when not quoted)
+            const hashIdx = val.indexOf(' #');
+            if (hashIdx !== -1) val = val.slice(0, hashIdx).trim();
+        }
+        // Only set if not already defined (real env takes precedence)
+        if (process.env[key] === undefined) {
+            process.env[key] = val;
+        }
+    }
+}
+
+/**
  * Interpolate <ENV.VAR_NAME> placeholders with process.env values.
  */
 function interpolateEnv(raw: string): string {
@@ -52,16 +86,23 @@ export interface LoadedConfig {
  * 1. `--config <path>` CLI argument → single file
  * 2. `xpg.config.yml` in CWD
  * 3. `config/postgres.yml` + `config/custom_fields.yml` (PHP-compatible layout)
+ *
+ * Automatically loads .env from CWD (and config dir if different).
  */
 export function loadConfig(configPath?: string): LoadedConfig {
     let raw: Record<string, unknown> = {};
     let configDir = process.cwd();
+
+    // Load .env from CWD (most common case for external projects)
+    loadDotEnv(process.cwd());
 
     if (configPath) {
         const abs = resolve(configPath);
         if (!existsSync(abs)) throw new Error(`Config file not found: ${abs}`);
         raw = YAML.parse(readFileSync(abs, 'utf-8')) ?? {};
         configDir = dirname(abs);
+        // Also load .env from config dir if it differs from CWD
+        if (configDir !== process.cwd()) loadDotEnv(configDir);
     } else if (existsSync(resolve(process.cwd(), 'xpg.config.yml'))) {
         const abs = resolve(process.cwd(), 'xpg.config.yml');
         raw = YAML.parse(readFileSync(abs, 'utf-8')) ?? {};
