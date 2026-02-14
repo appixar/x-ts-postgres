@@ -231,7 +231,7 @@ describe('generateCreateTable', () => {
             created: 'now',
         }, CUSTOM_FIELDS);
 
-        const queries = generateCreateTable('users', schema, true);
+        const queries = generateCreateTable('users', schema);
         assert.ok(queries.length > 0);
 
         const createQ = queries[0];
@@ -253,9 +253,9 @@ describe('generateCreateTable', () => {
 
 describe('generateDropTable', () => {
     it('generates DROP TABLE CASCADE', () => {
-        const q = generateDropTable('old_table', true);
+        const q = generateDropTable('old_table');
         assert.equal(q.sql, 'DROP TABLE IF EXISTS "old_table" CASCADE;');
-        assert.equal(q.color, 'yellow');
+        assert.equal(q.type, 'DROP_TABLE');
     });
 });
 
