@@ -108,6 +108,14 @@ export function normalizeDbDefaultForCompare(dbDefault: string | null | undefine
     // Don't touch nextval (serial/sequence)
     if (d.toLowerCase().includes('nextval(')) return d;
 
+    // Special handling for encode(gen_random_bytes... which often has internal casts like 'hex'::text
+    if (d.toLowerCase().startsWith('encode(')) {
+        // Remove ::text inside the expression
+        d = d.replace(/::text/gi, '');
+        // Remove ::unknown inside the expression (sometimes happens)
+        d = d.replace(/::unknown/gi, '');
+    }
+
     // Strip trailing ::type casts (handles multiword like "timestamp without time zone")
     let prev = '';
     while (prev !== d) {
