@@ -2,7 +2,6 @@ import { confirm } from '@inquirer/prompts';
 import Table from 'cli-table3';
 import { SchemaEngine } from './schemaEngine.js';
 import * as log from './logger.js';
-import type { MigrationResult } from './builder.js';
 
 export interface BuilderOptions {
     mute?: boolean;
