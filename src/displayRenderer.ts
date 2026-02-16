@@ -92,10 +92,8 @@ function renderCompact(queries: QueuedQuery[]): void {
     console.log(''); // Leading space
 
     for (const [tableName, items] of groups) {
-        // Table header — bold + colored by predominant action
-        const predominant = getPredominantAction(items);
-        const headerColor = predominant.color;
-        console.log(`  ${headerColor(chalk.bold(tableName))}`);
+        // Table header — neutral white bold for clear hierarchy
+        console.log(`  ${chalk.white.bold(tableName)}`);
 
         // Render each action as a tree branch
         for (let i = 0; i < items.length; i++) {
