@@ -8,6 +8,7 @@ import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { up } from './builder.js';
 import { runQuery } from './queryRunner.js';
+import { visualizeDiff } from './diffVisualizer.js';
 import * as log from './logger.js';
 
 const program = new Command();
@@ -19,6 +20,30 @@ program
   .option('--no-color', 'Disable colored output')
   .hook('preAction', () => {
     log.welcome();
+  });
+
+
+
+// ─── diff command ───
+program
+  .command('diff')
+  .description('Show differences between local YAML schemas and remote database')
+  .option('--name <db>', 'Target specific database cluster by NAME')
+  .option('--tenant <key>', 'Target specific tenant key')
+  .option('--drop-orphans', 'Include DROP TABLE statements for orphans')
+  .option('--config <path>', 'Path to config file')
+  .action(async (opts) => {
+    try {
+      await visualizeDiff({
+        name: opts.name,
+        tenant: opts.tenant,
+        dropOrphans: opts.dropOrphans,
+        config: opts.config,
+      });
+    } catch (err) {
+      log.error((err as Error).message);
+      process.exit(1);
+    }
   });
 
 // ─── up command ───
