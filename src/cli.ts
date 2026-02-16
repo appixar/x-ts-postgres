@@ -32,6 +32,7 @@ program
   .option('--name <db>', 'Target specific database cluster by NAME')
   .option('--tenant <key>', 'Target specific tenant key')
   .option('--drop-orphans', 'Include DROP TABLE statements for orphans')
+  .option('--display <mode>', 'Display mode: table or compact')
   .option('--config <path>', 'Path to config file')
   .action(async (opts) => {
     try {
@@ -39,6 +40,7 @@ program
         name: opts.name,
         tenant: opts.tenant,
         dropOrphans: opts.dropOrphans,
+        display: opts.display,
         config: opts.config,
       });
     } catch (err) {
@@ -57,6 +59,7 @@ program
   .option('--mute', 'Suppress all output')
   .option('--dry', 'Dry run — show queries without executing')
   .option('--drop-orphans', 'Drop tables that exist in DB but not in YAML')
+  .option('--display <mode>', 'Display mode: table or compact')
   .option('--config <path>', 'Path to config file (default: xpg.config.yml)')
   .action(async (opts) => {
     try {
@@ -67,6 +70,7 @@ program
         mute: opts.mute,
         dry: opts.dry,
         dropOrphans: opts.dropOrphans,
+        display: opts.display,
         config: opts.config,
       });
 

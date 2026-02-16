@@ -1,17 +1,18 @@
-import Table from 'cli-table3';
 import { SchemaEngine } from './schemaEngine.js';
+import { renderQueries, renderSummary, type DisplayMode } from './displayRenderer.js';
 import * as log from './logger.js';
-import { generateCreateDatabase } from './sqlGenerator.js';
 
 export interface DiffOptions {
     name?: string;
     tenant?: string;
     config?: string;
     dropOrphans?: boolean;
+    display?: DisplayMode;
 }
 
 export async function visualizeDiff(options: DiffOptions = {}): Promise<void> {
     const engine = new SchemaEngine({ config: options.config });
+    const displayMode = options.display ?? engine.getConfig().displayMode;
 
     try {
         const targets = engine.getTargets({ name: options.name, tenant: options.tenant });
@@ -33,28 +34,8 @@ export async function visualizeDiff(options: DiffOptions = {}): Promise<void> {
             }
 
             if (queries.length > 0) {
-                const table = new Table({
-                    head: ['Table', 'Type', 'Description'],
-                    style: { head: ['cyan'] },
-                    wordWrap: true
-                });
-
-                for (const q of queries) {
-                    let typeColor = 'white';
-                    if (q.type === 'DROP_TABLE' || q.type === 'DROP_COLUMN' || q.type === 'DROP_INDEX') {
-                        typeColor = 'yellow';
-                    } else if (q.type === 'CREATE_TABLE' || q.type === 'CREATE_DB') {
-                        typeColor = 'green';
-                    } else {
-                        typeColor = 'cyan';
-                    }
-
-                    // @ts-ignore
-                    table.push([q.table, { content: q.type, style: { 'padding-left': 1, 'color': typeColor } }, q.description]);
-                }
-
-                console.log(table.toString());
-                log.info(`${queries.length} differences found.`);
+                renderQueries(queries, displayMode);
+                renderSummary(queries.length, 'differences');
             } else {
                 log.succeed('Schemas are in sync.');
             }

@@ -171,6 +171,8 @@ export interface LoadedConfig {
     configDir: string;
     /** Directory where seed files are located */
     seedPath: string;
+    /** Display mode for CLI output: 'table' or 'compact' */
+    displayMode: 'table' | 'compact';
 }
 
 /**
@@ -242,7 +244,11 @@ export function loadConfig(configPath?: string): LoadedConfig {
     const seedPathRaw = (raw.POSTGRES as any)?.SEED_PATH ?? 'seeds';
     const seedPath = resolve(configDir, seedPathRaw);
 
-    return { postgres, customFields, configDir, seedPath };
+    // Display mode (table | compact)
+    const displayModeRaw = (raw.POSTGRES as any)?.DISPLAY_MODE ?? 'compact';
+    const displayMode = displayModeRaw === 'compact' ? 'compact' : 'table' as const;
+
+    return { postgres, customFields, configDir, seedPath, displayMode };
 }
 
 /**

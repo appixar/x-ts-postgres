@@ -1,6 +1,6 @@
 import { confirm } from '@inquirer/prompts';
-import Table from 'cli-table3';
 import { SchemaEngine } from './schemaEngine.js';
+import { renderQueries, renderSummary, type DisplayMode } from './displayRenderer.js';
 import * as log from './logger.js';
 
 export interface BuilderOptions {
@@ -11,6 +11,7 @@ export interface BuilderOptions {
     dry?: boolean;
     config?: string;
     dropOrphans?: boolean;
+    display?: DisplayMode;
 }
 
 export interface MigrationResult {
@@ -26,6 +27,7 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
     
     // Use schema engine
     const engine = new SchemaEngine({ config: options.config, mute });
+    const displayMode = options.display ?? engine.getConfig().displayMode;
 
     try {
         const targets = engine.getTargets({ name: options.name, tenant: options.tenant });
@@ -46,7 +48,6 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
                        if (!mute) log.spin('Creating database...');
                        await adminPool.query(createDbQuery.sql);
                        if (!mute) log.succeed(`Database created. Re-running migration...`);
-                       // Needs to pass through to generateDiff, which will now see empty tables
                    } else {
                        if (!mute) log.info(`[Dry Run] Database '${target.config.NAME}' would be created.`);
                    }
@@ -59,28 +60,8 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
             // 3. Execution / Visualization
             if (queries.length > 0) {
                  if (!mute) {
-                    const table = new Table({
-                        head: ['Table', 'Type', 'Description'],
-                        style: { head: ['cyan'] },
-                        wordWrap: true
-                    });
-    
-                    for (const q of queries) {
-                        let typeColor = 'white';
-                        if (q.type === 'DROP_TABLE' || q.type === 'DROP_COLUMN' || q.type === 'DROP_INDEX') {
-                            typeColor = 'yellow';
-                        } else if (q.type === 'CREATE_TABLE' || q.type === 'CREATE_DB') {
-                            typeColor = 'green';
-                        } else {
-                            typeColor = 'cyan';
-                        }
-    
-                        // @ts-ignore
-                        table.push([q.table, { content: q.type, style: { 'padding-left': 1, 'color': typeColor } }, q.description]);
-                    }
-    
-                    console.log(table.toString());
-                    log.say(`\n${queries.length} changes to apply.`, 'cyan');
+                    renderQueries(queries, displayMode);
+                    renderSummary(queries.length, 'changes to apply');
                  }
 
                  if (dryRun) {
@@ -127,3 +108,4 @@ export async function up(options: BuilderOptions = {}): Promise<MigrationResult>
     
     return result;
 }
+
