@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { up } from './builder.js';
 import { runQuery } from './queryRunner.js';
 import { visualizeDiff } from './diffVisualizer.js';
+import { runSeed } from './seedRunner.js';
 import * as log from './logger.js';
 
 const program = new Command();
@@ -90,6 +91,23 @@ program
       await runQuery(sql, {
         name: opts.name,
         tenant: opts.tenant,
+        config: opts.config,
+      });
+    } catch (err) {
+      log.error((err as Error).message);
+      process.exit(1);
+    }
+  });
+
+// ─── seed command ───
+program
+  .command('seed [filename]')
+  .description('Seed database with data from YAML files')
+  .option('--config <path>', 'Path to config file')
+  .action(async (filename, opts) => {
+    try {
+      await runSeed({
+        filename,
         config: opts.config,
       });
     } catch (err) {

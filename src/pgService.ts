@@ -149,18 +149,21 @@ export class PgService {
      */
     async query<T extends Record<string, unknown> = Record<string, unknown>>(
         sql: string,
-        params?: Record<string, unknown>
+        params?: Record<string, unknown> | unknown[]
     ): Promise<T[]> {
         const pool = isReadOnly(sql) && !this.forcePrimary
             ? this.getReadPool()
             : this.getWritePool();
 
         try {
-            // Convert named params :key to $N positional params
             let pgSql = sql;
-            const values: unknown[] = [];
+            let values: unknown[] = [];
 
-            if (params && Object.keys(params).length > 0) {
+            if (Array.isArray(params)) {
+                // Direct pass-through for positional parameters ($1, $2, etc.)
+                values = params;
+            } else if (params && Object.keys(params).length > 0) {
+                // Convert named params :key to $N positional params
                 let paramIndex = 0;
                 // Use negative lookbehind to avoid matching ::typecast syntax
                 pgSql = sql.replace(/(?<!:):([a-zA-Z_]\w*)/g, (_match, key) => {

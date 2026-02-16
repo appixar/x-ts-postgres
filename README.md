@@ -173,7 +173,12 @@ npx xpg <command> [options]
 
 | Command | Description |
 |---------|-------------|
+| Command | Description |
+|---------|-------------|
 | `xpg up` | Run database migrations |
+| `xpg diff` | Show schema differences |
+| `xpg query` | Execute raw SQL |
+| `xpg seed` | Populate database with seed data |
 | `xpg init` | Generate sample config files |
 
 ### Options for `xpg up`
@@ -197,6 +202,15 @@ npx xpg up --dry
 
 # Create database if needed, then migrate
 npx xpg up --create
+
+# View diff without executing
+npx xpg diff
+
+# Execute a SQL query
+npx xpg query "SELECT * FROM users LIMIT 10"
+
+# Initial seed
+npx xpg seed seeds/users.yml
 
 # Target a specific cluster
 npx xpg up --name main

@@ -1,0 +1,6 @@
+# Sample seed data
+ga_user:
+  - user_nick: "admin"
+    user_email: "admin@example.com"
+  - user_nick: "tester"
+    user_email: "test@example.com"

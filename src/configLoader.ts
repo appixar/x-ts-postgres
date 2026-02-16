@@ -169,6 +169,8 @@ export interface LoadedConfig {
     customFields: Record<string, CustomFieldDef>;
     /** Directory where the config file lives (used to resolve relative paths) */
     configDir: string;
+    /** Directory where seed files are located */
+    seedPath: string;
 }
 
 /**
@@ -235,7 +237,12 @@ export function loadConfig(configPath?: string): LoadedConfig {
 
     const customFields: Record<string, CustomFieldDef> = postgres.CUSTOM_FIELDS ?? {};
 
-    return { postgres, customFields, configDir };
+    // Resolve SEED_PATH
+    // Defaults to 'seeds' relative to config dir
+    const seedPathRaw = (raw.POSTGRES as any)?.SEED_PATH ?? 'seeds';
+    const seedPath = resolve(configDir, seedPathRaw);
+
+    return { postgres, customFields, configDir, seedPath };
 }
 
 /**
