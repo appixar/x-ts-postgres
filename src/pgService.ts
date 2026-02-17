@@ -1,24 +1,38 @@
 // ─────────────────────────────────────────────
-// x-postgres — PgService
+// x-postgres — Database
 // ─────────────────────────────────────────────
 // PostgreSQL connection & query service.
-// Port of PHP PgService with read/write splitting,
-// multi-cluster, and connection pooling via pg.Pool.
+// Read/write splitting, multi-cluster,
+// connection pooling, and transactions.
 
 import pg from 'pg';
 import type { DbNodeConfig } from './types.js';
 
 const { Pool } = pg;
 
-interface PgServiceOptions {
+interface DatabaseOptions {
     /** Cluster name (key in POSTGRES.DB config) */
     cluster?: string;
     /** Force primary (write) node */
     primary?: boolean;
 }
 
+/**
+ * Transaction client passed to the `transaction()` callback.
+ * All queries share the same underlying connection.
+ */
+export interface TransactionClient {
+    /** Execute a query with named (:param) or positional ($1) parameters. */
+    queryWith<R extends Record<string, unknown> = Record<string, unknown>>(
+        sql: string,
+        params?: Record<string, unknown> | unknown[]
+    ): Promise<R[]>;
+    /** Raw pg.PoolClient for advanced use cases. */
+    raw: pg.PoolClient;
+}
+
 // Pool registry — keyed by connection string to avoid duplicates
-// while still being manageable per PgService instance.
+// while still being manageable per Database instance.
 const poolRegistry: Map<string, pg.Pool> = new Map();
 
 /**
@@ -86,7 +100,7 @@ function isReadOnly(sql: string): boolean {
     return READ_COMMANDS.includes(first);
 }
 
-export class PgService {
+export class Database {
     private clusterName: string;
     private writeNode: DbNodeConfig;
     private readNodes: DbNodeConfig[];
@@ -96,7 +110,7 @@ export class PgService {
     constructor(
         clusterConf: DbNodeConfig | DbNodeConfig[],
         clusterName: string,
-        options: PgServiceOptions = {}
+        options: DatabaseOptions = {}
     ) {
         this.clusterName = clusterName;
         this.forcePrimary = options.primary ?? false;
@@ -252,6 +266,72 @@ export class PgService {
         } catch (err) {
             this.error = (err as Error).message;
             throw err;
+        }
+    }
+
+    /**
+     * Execute a callback inside a database transaction.
+     * Uses a dedicated connection from the write pool — all queries
+     * within the callback share the same connection (required for BEGIN/COMMIT).
+     *
+     * @example
+     * ```ts
+     * const orderId = await pg.transaction(async (client) => {
+     *     const [order] = await client.queryWith<{ id: number }>(
+     *         'INSERT INTO orders (user_id) VALUES (:userId) RETURNING id',
+     *         { userId: 42 }
+     *     );
+     *     await client.queryWith(
+     *         'INSERT INTO order_items (order_id, product_id) VALUES (:orderId, :productId)',
+     *         { orderId: order.id, productId: 7 }
+     *     );
+     *     return order.id;
+     * });
+     * ```
+     */
+    async transaction<T>(fn: (client: TransactionClient) => Promise<T>): Promise<T> {
+        const pool = this.getWritePool();
+        const raw = await pool.connect();
+
+        // Wrap the raw PoolClient with named-param support
+        const client: TransactionClient = {
+            async queryWith<R extends Record<string, unknown> = Record<string, unknown>>(
+                sql: string,
+                params?: Record<string, unknown> | unknown[]
+            ): Promise<R[]> {
+                let pgSql = sql;
+                let values: unknown[] = [];
+
+                if (Array.isArray(params)) {
+                    values = params;
+                } else if (params && Object.keys(params).length > 0) {
+                    let idx = 0;
+                    pgSql = sql.replace(/(?<!:):([a-zA-Z_]\w*)/g, (_match, key) => {
+                        if (params[key] !== undefined) {
+                            idx++;
+                            values.push(params[key]);
+                            return `$${idx}`;
+                        }
+                        return _match;
+                    });
+                }
+
+                const result = await raw.query(pgSql, values.length > 0 ? values : undefined);
+                return result.rows as R[];
+            },
+            raw,
+        };
+
+        try {
+            await raw.query('BEGIN');
+            const result = await fn(client);
+            await raw.query('COMMIT');
+            return result;
+        } catch (err) {
+            await raw.query('ROLLBACK');
+            throw err;
+        } finally {
+            raw.release();
         }
     }
 

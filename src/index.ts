@@ -4,7 +4,7 @@
 // Use these exports when importing x-postgres as
 // a library in Next.js or other Node.js projects.
 
-export { PgService } from './pgService.js';
+export { Database, Database as PgService, type TransactionClient } from './pgService.js';
 export { up, up as migrate, type BuilderOptions, type MigrationResult } from './builder.js';
 export { parseSchema } from './schemaParser.js';
 export { loadConfig } from './configLoader.js';

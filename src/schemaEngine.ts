@@ -15,7 +15,7 @@ import { loadConfig, resolveSchemaPath, type LoadedConfig } from './configLoader
 import { parseSchema } from './schemaParser.js';
 import { generateCreateTable, generateDropTable, generateCreateDatabase } from './sqlGenerator.js';
 import { generateUpdateTable, type DiffContext } from './diffEngine.js';
-import { PgService } from './pgService.js';
+import { Database } from './pgService.js';
 import * as log from './logger.js';
 import type { QueuedQuery, DbColumnInfo, DbNodeConfig } from './types.js';
 
@@ -27,7 +27,7 @@ export interface SchemaEngineOptions {
 export interface TargetDb {
     id: string;
     config: DbNodeConfig;
-    pg: PgService;
+    pg: Database;
 }
 
 export class SchemaEngine {
@@ -52,7 +52,7 @@ export class SchemaEngine {
 
     /**
      * Iterate over all defined databases, or filter by name/tenant.
-     * Yields a connected PgService for each matching DB.
+     * Yields a connected Database for each matching DB.
      */
     public *getTargets(filter?: { name?: string; tenant?: string }): Generator<TargetDb> {
         const { postgres } = this.config;
@@ -67,7 +67,7 @@ export class SchemaEngine {
                 if (filter.name !== writeNode.NAME && !writeNode.TENANT_KEYS) continue;
             }
 
-            const pg = new PgService(dbConf, dbId);
+            const pg = new Database(dbConf, dbId);
             yield { id: dbId, config: writeNode, pg };
         }
     }
@@ -239,6 +239,6 @@ export class SchemaEngine {
     }
 
     public async close(): Promise<void> {
-        await PgService.closeAll();
+        await Database.closeAll();
     }
 }

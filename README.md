@@ -225,15 +225,15 @@ npx xpg up --drop-orphans
 
 Import **xpg** as a library in your Node.js / Next.js project:
 
-### PgService — Query Service
+### Database — Query Service
 
 ```typescript
-import { PgService, loadConfig } from '@appixar/xpg';
+import { Database, loadConfig } from '@appixar/xpg';
 
 const config = loadConfig();
 const cluster = config.postgres.DB['main'];
 
-const db = new PgService(cluster, 'main');
+const db = new Database(cluster, 'main');
 
 // Automatic read/write routing
 const users = await db.query<{ user_id: number; user_name: string }>(
@@ -260,7 +260,7 @@ await db.update('app_users',
 );
 
 // Close all pools when done
-await PgService.closeAll();
+await Database.closeAll();
 ```
 
 ### Named Parameters
@@ -276,7 +276,7 @@ const rows = await db.query(
 
 ### Read/Write Splitting
 
-`PgService` automatically routes:
+`Database` automatically routes:
 
 - **SELECT / SHOW / EXPLAIN / WITH** → read replica pool
 - **INSERT / UPDATE / DELETE / CREATE / ALTER** → write (primary) pool
@@ -284,8 +284,32 @@ const rows = await db.query(
 Force primary for reads when you need consistency:
 
 ```typescript
-const db = new PgService(cluster, 'main', { primary: true });
+const db = new Database(cluster, 'main', { primary: true });
 ```
+
+### Transactions
+
+Use `transaction()` for atomic multi-query operations. All queries inside the callback share the same connection, ensuring `BEGIN/COMMIT/ROLLBACK` works correctly:
+
+```typescript
+const orderId = await db.transaction(async (client) => {
+  const [order] = await client.queryWith<{ id: number }>(
+    'INSERT INTO orders (user_id) VALUES (:userId) RETURNING id',
+    { userId: 42 }
+  );
+
+  await client.queryWith(
+    'INSERT INTO order_items (order_id, product_id, qty) VALUES (:orderId, :productId, :qty)',
+    { orderId: order.id, productId: 7, qty: 3 }
+  );
+
+  return order.id; // returned from transaction()
+});
+```
+
+- **Auto-ROLLBACK** on error — if any query throws, the entire transaction is rolled back
+- **Named params** — `client.queryWith()` supports `:param` syntax just like `db.query()`
+- **Connection safety** — the connection is automatically released back to the pool
 
 ### Run Migrations Programmatically
 
