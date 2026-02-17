@@ -268,7 +268,7 @@ npx xpg seed               # all seed files
 npx xpg seed app_users.yml  # specific file
 ```
 
-Seeding is **idempotent** — rows are only inserted if they don't already exist (matched on all provided fields).
+Seeding uses **upsert** — rows are inserted if new, or updated if the primary key already exists.
 
 ### Dumping Seeds from Database
 

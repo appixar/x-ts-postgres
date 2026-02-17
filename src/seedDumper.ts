@@ -7,6 +7,7 @@
 import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { confirm } from '@inquirer/prompts';
+import chalk from 'chalk';
 import YAML from 'yaml';
 import { SchemaEngine } from './schemaEngine.js';
 import * as log from './logger.js';
@@ -36,10 +37,8 @@ const AUTO_DEFAULT_PATTERNS = [
 ];
 
 function isAutoColumn(columnDefault: string | null, dataType: string): boolean {
-    // SERIAL types
     if (dataType === 'integer' && columnDefault?.includes('nextval(')) return true;
     if (dataType === 'bigint' && columnDefault?.includes('nextval(')) return true;
-
     if (!columnDefault) return false;
     return AUTO_DEFAULT_PATTERNS.some(p => p.test(columnDefault));
 }
@@ -56,7 +55,6 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
     }
 
     try {
-        // Get first available target
         const targets = engine.getTargets();
         const iter = targets.next();
         if (iter.done) {
@@ -68,9 +66,11 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
         log.header(`Dumping seeds from ${id} (${config.NAME})`, 'magenta');
 
         // 1. Get all public tables
+        log.spin('Analyzing database tables...');
         const allTables = await pg.query<{ table_name: string }>(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
         );
+        log.stopSpinner();
 
         if (allTables.length === 0) {
             log.warn('No tables found in database.');
@@ -99,11 +99,12 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
             return;
         }
 
-        log.info(`Found ${tablesToDump.length} table(s)`);
+        log.info(`${tablesToDump.length} table(s) to process`);
 
-        // 3. Get auto-column info if --skip-auto is set
+        // 3. Get auto-column info if --skip-auto
         let autoColumns: Map<string, Set<string>> | null = null;
         if (options.skipAuto) {
+            log.spin('Detecting auto-generated columns...');
             autoColumns = new Map();
             for (const table of tablesToDump) {
                 const cols = await pg.query<{ column_name: string; column_default: string | null; data_type: string }>(
@@ -118,12 +119,22 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
                 }
                 if (autoSet.size > 0) autoColumns.set(table, autoSet);
             }
+            log.stopSpinner();
         }
 
         // 4. Dump each table
         let dumpedCount = 0;
+        let skippedCount = 0;
+        let emptyCount = 0;
+        let totalRows = 0;
 
-        for (const table of tablesToDump) {
+        console.log('');
+
+        for (let i = 0; i < tablesToDump.length; i++) {
+            const table = tablesToDump[i];
+            const isLast = i === tablesToDump.length - 1;
+            const connector = isLast ? '└─' : '├─';
+
             // Prompt for confirmation unless --all
             if (!options.all) {
                 const ok = await confirm({
@@ -131,7 +142,8 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
                     default: true,
                 });
                 if (!ok) {
-                    log.say(`  Skipped ${table}`, 'gray');
+                    console.log(`  ${chalk.dim(connector)} ${chalk.dim('○')} ${chalk.dim(table)} ${chalk.dim('skipped')}`);
+                    skippedCount++;
                     continue;
                 }
             }
@@ -143,7 +155,8 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
             const rows = await pg.query<Record<string, unknown>>(sql);
 
             if (rows.length === 0) {
-                log.say(`  ${table}: 0 rows (empty)`, 'gray');
+                console.log(`  ${chalk.dim(connector)} ${chalk.dim('○')} ${chalk.dim(table)} ${chalk.dim('(empty)')}`);
+                emptyCount++;
                 continue;
             }
 
@@ -169,7 +182,7 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
                     } else if (v instanceof Date) {
                         obj[k] = v.toISOString();
                     } else if (typeof v === 'object') {
-                        obj[k] = v; // YAML lib handles objects/arrays natively
+                        obj[k] = v;
                     } else {
                         obj[k] = v;
                     }
@@ -180,7 +193,7 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
             // Build YAML
             const yamlData = { [table]: serialized };
             const yamlStr = YAML.stringify(yamlData, {
-                lineWidth: 0,        // no line wrapping
+                lineWidth: 0,
                 defaultStringType: 'QUOTE_DOUBLE',
                 defaultKeyType: 'PLAIN',
             });
@@ -190,14 +203,27 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
             const existed = existsSync(filePath);
             writeFileSync(filePath, yamlStr, 'utf-8');
 
-            const action = existed ? 'Updated' : 'Created';
-            log.succeed(`${action} ${table}.yml (${serialized.length} rows)`);
+            const action = existed ? 'updated' : 'created';
+            const icon = existed ? chalk.cyan('✎') : chalk.green('✚');
+            const rowLabel = serialized.length === 1 ? 'row' : 'rows';
+
+            console.log(`  ${chalk.dim(connector)} ${icon} ${chalk.white.bold(table)} ${chalk.dim('→')} ${chalk.green(`${serialized.length} ${rowLabel}`)} ${chalk.dim(`(${action})`)}`);
+
             dumpedCount++;
+            totalRows += serialized.length;
         }
 
         // Summary
+        console.log('');
+        const parts: string[] = [];
+        if (dumpedCount > 0) parts.push(chalk.green(`${dumpedCount} file(s) written`));
+        if (totalRows > 0) parts.push(chalk.cyan(`${totalRows} total rows`));
+        if (skippedCount > 0) parts.push(chalk.dim(`${skippedCount} skipped`));
+        if (emptyCount > 0) parts.push(chalk.dim(`${emptyCount} empty`));
+
         if (dumpedCount > 0) {
-            log.header(`${dumpedCount} seed file(s) written to ${seedPath}`, 'green');
+            log.succeed(`Done — ${parts.join(chalk.dim(', '))}`);
+            log.info(`Seed files written to ${seedPath}`);
         } else {
             log.warn('No seed files were generated.');
         }
