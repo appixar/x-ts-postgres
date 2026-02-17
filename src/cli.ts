@@ -108,11 +108,13 @@ program
 program
   .command('seed [filename]')
   .description('Seed database with data from YAML files')
+  .option('--yes', 'Skip per-table confirmation prompts')
   .option('--config <path>', 'Path to config file')
   .action(async (filename, opts) => {
     try {
       await runSeed({
         filename,
+        yes: opts.yes,
         config: opts.config,
       });
     } catch (err) {

@@ -99,7 +99,7 @@ function checkTypeMismatch(table: string, colName: string, configType: string, d
     const dbLength = dbCol.character_maximum_length;
 
     if (mappedConfigType !== dbType) {
-        const sql = `ALTER TABLE "${table}" ALTER COLUMN "${colName}" TYPE ${configType};`;
+        const sql = `ALTER TABLE "${table}" ALTER COLUMN "${colName}" TYPE ${configType} USING "${colName}"::${configType};`;
         queries.push({
             sql,
             table,
@@ -118,7 +118,7 @@ function checkTypeMismatch(table: string, colName: string, configType: string, d
             const scaleMismatch = cfgScale && dbScale !== null && String(dbScale) !== cfgScale;
             
             if (precisionMismatch || scaleMismatch) {
-                 const sql = `ALTER TABLE "${table}" ALTER COLUMN "${colName}" TYPE ${configType};`;
+                 const sql = `ALTER TABLE "${table}" ALTER COLUMN "${colName}" TYPE ${configType} USING "${colName}"::${configType};`;
                  queries.push({
                      sql,
                      table,
@@ -127,7 +127,7 @@ function checkTypeMismatch(table: string, colName: string, configType: string, d
                  });
             }
         } else if (dbLength !== null && String(dbLength) !== configLength.split(',')[0]) {
-             const sql = `ALTER TABLE "${table}" ALTER COLUMN "${colName}" TYPE ${configType};`;
+             const sql = `ALTER TABLE "${table}" ALTER COLUMN "${colName}" TYPE ${configType} USING "${colName}"::${configType};`;
              queries.push({
                  sql,
                  table,

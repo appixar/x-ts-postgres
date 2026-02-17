@@ -207,6 +207,7 @@ npx xpg <command> [options]
 | `--display <mode>` | `up` `diff` | Output format: `compact` (default) or `table` |
 | `--name <db>` | `up` `diff` `query` | Target a specific database cluster |
 | `--tenant <key>` | `up` `diff` `query` | Target a specific tenant |
+| `--yes` | `seed` | Skip per-table confirmation prompts |
 | `--tables <list>` | `seed:dump` | Comma-separated list of tables to dump |
 | `--exclude <list>` | `seed:dump` | Comma-separated list of tables to exclude |
 | `--all` | `seed:dump` | Dump all tables without prompting |
