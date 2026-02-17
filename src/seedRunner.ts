@@ -22,61 +22,79 @@ interface SeedTable {
     sourceFile: string;
 }
 
-// ─── Deep value comparison ───
-// Handles all PostgreSQL ↔ YAML type mismatches:
-//   numeric/decimal → pg returns string "180", YAML has number 180
-//   boolean         → pg returns true, YAML may have "true"
-//   jsonb           → key order may differ between pg and YAML
+// ─── Value normalization ───
+// Converts pg driver types and YAML parsed types to a common
+// representation so identical data always compares as equal.
+//   numeric/decimal → pg returns string "180.00", YAML has number 180
 //   timestamp       → pg returns Date, YAML has ISO string
-//   null            → both sides
+//   jsonb           → key order may differ between pg and YAML
+//   boolean         → should match directly but coerce for safety
 
-function deepEqual(a: unknown, b: unknown): boolean {
-    // Identical or both null/undefined
-    if (a === b) return true;
-    if (a === null || a === undefined) return b === null || b === undefined;
-    if (b === null || b === undefined) return false;
-
-    // Date vs string
-    if (a instanceof Date && typeof b === 'string') {
-        return a.toISOString() === b || a.getTime() === new Date(b).getTime();
+function normalizeObject(obj: Record<string, unknown>): string {
+    const sortedKeys = Object.keys(obj).sort();
+    const normalized: Record<string, unknown> = {};
+    for (const k of sortedKeys) {
+        normalized[k] = normalize(obj[k]);
     }
-    if (b instanceof Date && typeof a === 'string') {
-        return b.toISOString() === a || b.getTime() === new Date(a).getTime();
-    }
-    if (a instanceof Date && b instanceof Date) {
-        return a.getTime() === b.getTime();
-    }
+    return JSON.stringify(normalized);
+}
 
-    // Number vs string (pg returns numeric/decimal as strings)
-    if (typeof a === 'number' && typeof b === 'string') return String(a) === b || a === Number(b);
-    if (typeof b === 'number' && typeof a === 'string') return String(b) === a || b === Number(a);
+function normalize(v: unknown): unknown {
+    if (v === null || v === undefined) return null;
 
-    // Boolean vs string
-    if (typeof a === 'boolean' && typeof b === 'string') return String(a) === b;
-    if (typeof b === 'boolean' && typeof a === 'string') return String(b) === a;
+    // Date → millisecond timestamp
+    if (v instanceof Date) return v.getTime();
 
-    // Object/Array — deep recursive (handles JSON key order differences)
-    if (typeof a === 'object' && typeof b === 'object') {
-        const aObj = a as Record<string, unknown>;
-        const bObj = b as Record<string, unknown>;
-
-        // Arrays
-        if (Array.isArray(a) && Array.isArray(b)) {
-            if (a.length !== b.length) return false;
-            return a.every((v, i) => deepEqual(v, b[i]));
+    // Object/Array → recursively normalize, then sorted stringify
+    if (typeof v === 'object') {
+        if (Array.isArray(v)) {
+            return JSON.stringify(v.map(normalize));
         }
-        if (Array.isArray(a) !== Array.isArray(b)) return false;
-
-        // Objects — compare all keys regardless of order
-        const aKeys = Object.keys(aObj);
-        const bKeys = Object.keys(bObj);
-        if (aKeys.length !== bKeys.length) return false;
-
-        return aKeys.every(k => k in bObj && deepEqual(aObj[k], bObj[k]));
+        return normalizeObject(v as Record<string, unknown>);
     }
 
-    // Fallback: string coercion
-    return String(a) === String(b);
+    // Boolean → keep as-is
+    if (typeof v === 'boolean') return v;
+
+    // Number → keep as number for precision
+    if (typeof v === 'number') return v;
+
+    // String → try to interpret as a richer type
+    if (typeof v === 'string') {
+        // JSON string from text/varchar column storing JSON
+        // e.g. '{"color":"#f472b6","toyType":"BEAR"}'
+        if ((v.startsWith('{') && v.endsWith('}')) || (v.startsWith('[') && v.endsWith(']'))) {
+            try {
+                const parsed = JSON.parse(v);
+                if (typeof parsed === 'object' && parsed !== null) {
+                    if (Array.isArray(parsed)) {
+                        return JSON.stringify(parsed.map(normalize));
+                    }
+                    return normalizeObject(parsed as Record<string, unknown>);
+                }
+            } catch { /* not valid JSON, treat as string */ }
+        }
+
+        // Numeric string from pg driver ("180", "2.50", "-3.14")
+        if (v.trim() !== '' && !isNaN(Number(v))) {
+            return Number(v);
+        }
+
+        // Date string → timestamp
+        // Matches both "2026-02-15T01:25:11.068Z" and "2026-02-15 01:25:11.068"
+        if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(v)) {
+            const d = new Date(v.includes('T') ? v : v.replace(' ', 'T') + 'Z');
+            if (!isNaN(d.getTime())) return d.getTime();
+        }
+
+        return v;
+    }
+
+    return String(v);
+}
+
+function valuesMatch(yamlVal: unknown, dbVal: unknown): boolean {
+    return normalize(yamlVal) === normalize(dbVal);
 }
 
 
@@ -206,7 +224,6 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         // Filter by --table if specified
         if (options.table) {
             const requested = options.table.split(',').map(t => t.trim().toLowerCase());
-            const before = seedTables.length;
             const filtered = seedTables.filter(st =>
                 requested.some(r => st.finalName.toLowerCase() === r || st.finalName.toLowerCase().endsWith(r))
             );
@@ -236,8 +253,9 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         let totalErrors = 0;
 
         for (const st of seedTables) {
+            console.log('');
 
-            // ── Analyze: count inserts vs real updates ──
+            // ── Analyze ──
             log.spin(`Analyzing ${st.finalName}...`);
 
             let willInsert = 0;
@@ -260,10 +278,9 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                         if (existing.length === 0) {
                             willInsert++;
                         } else {
-                            // Deep compare non-PK fields
                             const dbRow = existing[0];
                             const nonPkKeys = Object.keys(row).filter(k => !st.pkColumns.includes(k));
-                            const hasDiff = nonPkKeys.some(k => !deepEqual(row[k], dbRow[k]));
+                            const hasDiff = nonPkKeys.some(k => !valuesMatch(row[k], dbRow[k]));
                             if (hasDiff) {
                                 willUpdate++;
                             } else {
@@ -280,13 +297,12 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
 
             log.stopSpinner();
 
-            // ── Preview + Confirm ──
+            // ── Preview ──
             const isUpToDate = willInsert === 0 && willUpdate === 0;
 
             if (isUpToDate) {
-                console.log(`  ${chalk.green('✔')} ${chalk.white.bold(st.finalName)} ${chalk.dim('→')} ${chalk.dim('up to date')} ${chalk.dim(`(${willMatch} rows)`)}`);
+                console.log(`  ${chalk.green('✔')} ${chalk.white.bold(st.finalName)} ${chalk.dim(`— ${willMatch} rows, up to date`)}`);
                 totalUpToDate++;
-                console.log('');
                 continue;
             }
 
@@ -295,17 +311,17 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
             if (willUpdate > 0) parts.push(chalk.cyan(`${willUpdate} to update`));
             if (willMatch > 0) parts.push(chalk.dim(`${willMatch} unchanged`));
 
-            console.log(`  ${chalk.blue('◆')} ${chalk.white.bold(st.finalName)} ${chalk.dim('→')} ${parts.join(chalk.dim(', '))}`);
+            console.log(`  ${chalk.blue('◆')} ${chalk.white.bold(st.finalName)} ${chalk.dim('—')} ${parts.join(chalk.dim(', '))}`);
 
+            // ── Confirm ──
             if (!options.yes) {
                 const ok = await confirm({
-                    message: `  Apply?`,
+                    message: `Apply to ${st.finalName}?`,
                     default: true,
                 });
                 if (!ok) {
-                    console.log(`    ${chalk.dim('○ skipped')}`);
+                    console.log(`  ${chalk.dim('  ○ skipped')}`);
                     totalSkipped += st.rows.length;
-                    console.log('');
                     continue;
                 }
             }
@@ -370,7 +386,7 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
             totalInserted += inserted;
             totalUpdated += updated;
 
-            // Result line
+            // Result
             const resultParts: string[] = [];
             if (inserted > 0) resultParts.push(chalk.green(`${inserted} inserted`));
             if (updated > 0) resultParts.push(chalk.cyan(`${updated} updated`));
@@ -378,13 +394,13 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
 
             const icon = errors > 0 ? chalk.red('✖') : chalk.green('✔');
             console.log(`    ${icon} ${resultParts.join(chalk.dim(', '))}`);
-            console.log('');
         }
 
         // ────────────────────────────────────
         // Summary
         // ────────────────────────────────────
 
+        console.log('');
         const summaryParts: string[] = [];
         if (totalInserted > 0) summaryParts.push(chalk.green(`${totalInserted} inserted`));
         if (totalUpdated > 0) summaryParts.push(chalk.cyan(`${totalUpdated} updated`));

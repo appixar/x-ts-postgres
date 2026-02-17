@@ -16,10 +16,10 @@ POSTGRES:
       PATH: [src/database]
 
   # Path to seed files (relative to config dir, default: seeds)
-  # SEED_PATH: src/database/seeds
+  SEED_PATH: src/database/seeds
 
   # Display mode for diff/up output: table | compact (default)
-  # DISPLAY_MODE: table
+  DISPLAY_MODE: table
 
   CUSTOM_FIELDS:
     "id":
