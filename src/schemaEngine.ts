@@ -143,32 +143,8 @@ export class SchemaEngine {
                 for (let [tableName, tableCols] of Object.entries(data)) {
                     if (!tableCols || typeof tableCols !== 'object') continue;
                     
-                    // Apply prefix
+                    // Apply prefix: ~tableName → PREF + tableName
                     if (tableName.startsWith('~') && config.PREF) {
-                        tableName = config.PREF + tableName.substring(1);
-                    } else if (config.PREF && !tableName.startsWith(config.PREF)) {
-                         // Some logic in builder.ts applied prefix unless it was raw? 
-                         // Actually builder.ts logic was:
-                         // if (tableName.startsWith('~') && writeNode.PREF) tableName = writeNode.PREF + tableName.substring(1);
-                         
-                         // Wait, let's look at builder.ts again.
-                         // It logic is: if starts with ~, allow explicit un-prefixed names? No.
-                         // Actually the logic in builder.ts line 145 was:
-                         // if (tableName.startsWith('~') && writeNode.PREF) { tableName = writeNode.PREF + tableName.substring(1); }
-                         
-                         // This seems slightly odd. Usually `~` means "use raw name".
-                         // BUT, `xpg.config.yml` example shows `PREF: app_`.
-                         // If I have `users`, should it be `app_users`?
-                         // In builder.ts it ONLY applies prefix if `tableName.startsWith('~')`? 
-                         // That sounds inverted or I misread.
-                         
-                         // Re-reading builder.ts:
-                         // if (tableName.startsWith('~') && writeNode.PREF) { tableName = writeNode.PREF + tableName.substring(1); }
-                         // This implies: `~users` -> `app_users`. `users` -> `users`.
-                         // This seems like a specific convention. I will preserve it exactly.
-                    }
-
-                     if (tableName.startsWith('~') && config.PREF) {
                         tableName = config.PREF + tableName.substring(1);
                     }
 

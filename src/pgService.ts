@@ -270,6 +270,103 @@ export class Database {
     }
 
     /**
+     * Delete rows from a table. Returns the number of affected rows.
+     */
+    async delete(
+        table: string,
+        condition: Record<string, unknown> | string
+    ): Promise<number> {
+        const pool = this.getWritePool();
+        const vals: unknown[] = [];
+        let whereClause: string;
+
+        if (typeof condition === 'string') {
+            whereClause = condition;
+        } else {
+            let idx = 0;
+            const parts = Object.entries(condition).map(([k, v]) => {
+                if (v === null || v === 'NULL') return `"${k}" IS NULL`;
+                idx++;
+                vals.push(v);
+                return `"${k}" = $${idx}`;
+            });
+            whereClause = parts.join(' AND ');
+        }
+
+        const sql = `DELETE FROM "${table}" WHERE ${whereClause}`;
+
+        try {
+            const result = await pool.query(sql, vals.length > 0 ? vals : undefined);
+            return result.rowCount ?? 0;
+        } catch (err) {
+            this.error = (err as Error).message;
+            throw err;
+        }
+    }
+
+    /**
+     * Find a single row by condition. Returns null if not found.
+     */
+    async findOne<T extends Record<string, unknown> = Record<string, unknown>>(
+        table: string,
+        condition: Record<string, unknown>,
+        columns: string = '*'
+    ): Promise<T | null> {
+        const vals: unknown[] = [];
+        let idx = 0;
+        const parts = Object.entries(condition).map(([k, v]) => {
+            if (v === null || v === 'NULL') return `"${k}" IS NULL`;
+            idx++;
+            vals.push(v);
+            return `"${k}" = $${idx}`;
+        });
+
+        const sql = `SELECT ${columns} FROM "${table}" WHERE ${parts.join(' AND ')} LIMIT 1`;
+
+        try {
+            const result = await this.getReadPool().query(sql, vals.length > 0 ? vals : undefined);
+            return (result.rows[0] as T) ?? null;
+        } catch (err) {
+            this.error = (err as Error).message;
+            throw err;
+        }
+    }
+
+    /**
+     * Find multiple rows by condition. Returns empty array if none found.
+     */
+    async findMany<T extends Record<string, unknown> = Record<string, unknown>>(
+        table: string,
+        condition?: Record<string, unknown>,
+        options?: { columns?: string; limit?: number; orderBy?: string }
+    ): Promise<T[]> {
+        const vals: unknown[] = [];
+        let sql = `SELECT ${options?.columns ?? '*'} FROM "${table}"`;
+
+        if (condition && Object.keys(condition).length > 0) {
+            let idx = 0;
+            const parts = Object.entries(condition).map(([k, v]) => {
+                if (v === null || v === 'NULL') return `"${k}" IS NULL`;
+                idx++;
+                vals.push(v);
+                return `"${k}" = $${idx}`;
+            });
+            sql += ` WHERE ${parts.join(' AND ')}`;
+        }
+
+        if (options?.orderBy) sql += ` ORDER BY ${options.orderBy}`;
+        if (options?.limit) sql += ` LIMIT ${options.limit}`;
+
+        try {
+            const result = await this.getReadPool().query(sql, vals.length > 0 ? vals : undefined);
+            return result.rows as T[];
+        } catch (err) {
+            this.error = (err as Error).message;
+            throw err;
+        }
+    }
+
+    /**
      * Execute a callback inside a database transaction.
      * Uses a dedicated connection from the write pool — all queries
      * within the callback share the same connection (required for BEGIN/COMMIT).

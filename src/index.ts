@@ -8,10 +8,7 @@ export { Database, Database as PgService, type TransactionClient } from './pgSer
 export { up, up as migrate, type BuilderOptions, type MigrationResult } from './builder.js';
 export { parseSchema } from './schemaParser.js';
 export { loadConfig } from './configLoader.js';
-export { generateCreateTable, generateDropTable, generateCreateDatabase } from './sqlGenerator.js';
-export { generateUpdateTable } from './diffEngine.js';
-export { normalizeDefaultSql, buildDefaultClause, normalizeDbDefaultForCompare } from './defaultNormalizer.js';
-export { POSTGRES_TYPE_DICTIONARY } from './typeDictionary.js';
+export { SchemaEngine, type TargetDb } from './schemaEngine.js';
 export * as logger from './logger.js';
 
 // Types

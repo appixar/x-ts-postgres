@@ -6,14 +6,18 @@ Define your database tables in simple YAML files, and **xpg** automatically crea
 
 ## Features
 
-- **YAML Schema DSL** — Define tables with a concise, human-readable syntax.
+- **YAML Schema DSL** — Define tables with a concise, human-readable syntax
 - **Diff-based migrations** — Automatically detects changes and generates `ALTER TABLE` statements
 - **Custom field types** — Create reusable type aliases (`id`, `str`, `email`, etc.)
 - **Read/write splitting** — Route queries to read replicas automatically
-- **Multi-cluster support** — Manage multiple database clusters from a single config
+- **Transactions** — Atomic multi-query operations with auto-rollback
+- **Multi-cluster & multi-tenant** — Manage multiple databases from a single config
+- **Named parameters** — Use `:param` syntax for safe, parameterized queries
+- **Data seeding** — Populate tables from YAML seed files
 - **Environment variable interpolation** — Use `<ENV.VAR_NAME>` in config files
 - **CLI + Programmatic API** — Use from the terminal or import as a library
 - **Dry run mode** — Preview SQL without executing
+- **Compact display** — Tree-like output for clear, scannable diffs
 
 ## Installation
 
@@ -31,7 +35,7 @@ npx xpg init
 
 This creates:
 
-- `xpg.config.yml` — Database connection and custom field types (or x-postgres.config.yml)
+- `xpg.config.yml` — Database connection and custom field types
 - `database/example.yml` — Sample table definition
 
 ### 2. Configure
@@ -50,6 +54,9 @@ POSTGRES:
       PREF: app_          # Table prefix (optional)
       PATH: [database]    # Directories containing .yml schema files
 
+  # SEED_PATH: seeds      # Path to seed files (default: seeds)
+  # DISPLAY_MODE: table   # Display mode: compact (default) | table
+
   CUSTOM_FIELDS:
     "id":
       Type: serial
@@ -66,8 +73,6 @@ POSTGRES:
       Type: timestamp
     "email":
       Type: varchar(128)
-    "phone":
-      Type: varchar(11)
     "now":
       Type: timestamp
       Default: now()
@@ -86,7 +91,7 @@ Create YAML files in your `database/` directory:
 users:
   user_id: id
   user_name: str required
-  user_email: email unique index
+  user_email: email required unique index
   user_status: str/32 default/active index
   user_date_insert: now
 ```
@@ -126,20 +131,39 @@ Use any PostgreSQL type directly or a custom field alias:
 | `now` | `TIMESTAMP DEFAULT now()` | Auto-timestamp |
 | `pid` | `VARCHAR(12) UNIQUE` | Random public ID |
 
-You can also use raw PostgreSQL types: `varchar(255)`, `integer`, `boolean`, `jsonb`, `uuid`, `numeric(16,8)`, etc.
+You can also use raw PostgreSQL types: `varchar(255)`, `boolean`, `jsonb`, `uuid`, `numeric(16,8)`, etc.
 
 ### Modifiers
 
-| Modifier | Description |
-|----------|-------------|
-| `required` | Adds `NOT NULL` constraint |
-| `unique` | Adds `UNIQUE` constraint |
-| `unique/group_name` | Composite unique constraint |
-| `index` | Creates an index on this column |
-| `index/group_name` | Composite index |
-| `default/value` | Sets default value |
+| Modifier | Description | Example |
+|----------|-------------|---------|
+| `required` | `NOT NULL` constraint | `user_name: str required` |
+| `unique` | `UNIQUE` constraint | `user_email: email unique` |
+| `unique/group` | Composite unique index | `ticker: str unique/pair` |
+| `index` | Individual index | `user_status: str index` |
+| `index/group` | Composite index | `created_at: date index/range` |
+| `default/value` | Default value | `status: str default/active` |
 
-### Examples
+> **Note:** Fields without `required` default to `NULL`.
+
+### Composite Indexes & Unique Constraints
+
+Group multiple fields into a single index or unique constraint using the `/group_name` syntax. Fields sharing the same group name are combined:
+
+```yaml
+stock_prices:
+  price_id: id
+  ticker: str required unique/ticker_ex index/lookup
+  exchange: str required unique/ticker_ex index/lookup
+  price: numeric(10,2) required
+  date: date required
+```
+
+This generates:
+- `CREATE UNIQUE INDEX "stock_prices_ticker_ex_unique_idx" ON "stock_prices" ("ticker", "exchange")`
+- `CREATE INDEX "stock_prices_lookup_idx" ON "stock_prices" ("ticker", "exchange")`
+
+### Full Example
 
 ```yaml
 products:
@@ -147,18 +171,10 @@ products:
   product_name: varchar(200) required
   product_price: numeric(10,2) required default/0
   product_active: boolean default/true
-  product_metadata: jsonb default/{}
+  product_metadata: jsonb
   product_category: str index
-  product_sku: str/32 unique
+  product_sku: str/32 required unique
   product_date_insert: now
-
-  # Composite index on category + active
-  product_category: str index/cat_active
-  product_active: boolean index/cat_active
-
-  # Composite unique on name + category
-  product_name: varchar(200) unique/name_cat
-  product_category: str unique/name_cat
 ```
 
 ---
@@ -173,44 +189,55 @@ npx xpg <command> [options]
 
 | Command | Description |
 |---------|-------------|
-| Command | Description |
-|---------|-------------|
 | `xpg up` | Run database migrations |
-| `xpg diff` | Show schema differences |
-| `xpg query` | Execute raw SQL |
-| `xpg seed` | Populate database with seed data |
+| `xpg diff` | Show schema differences without executing |
+| `xpg query <sql>` | Execute a raw SQL query |
+| `xpg seed [file]` | Populate database with seed data |
+| `xpg seed:dump` | Generate YAML seed files from live database |
 | `xpg init` | Generate sample config files |
 
-### Options for `xpg up`
+### Options
 
-| Flag | Description |
-|------|-------------|
-| `--create` | Create the database if it doesn't exist |
-| `--name <db>` | Target a specific database cluster by name |
-| `--tenant <key>` | Target a specific tenant |
-| `--dry` | Preview SQL queries without executing |
-| `--mute` | Suppress all output |
-| `--drop-orphans` | Drop tables that exist in DB but not in YAML |
-| `--config <path>` | Path to a custom config file |
-| `--no-color` | Disable colored terminal output |
+| Flag | Commands | Description |
+|------|----------|-------------|
+| `--create` | `up` | Create the database if it doesn't exist |
+| `--dry` | `up` | Preview SQL queries without executing |
+| `--mute` | `up` | Suppress all output |
+| `--drop-orphans` | `up` `diff` | Include `DROP TABLE` for tables not in YAML |
+| `--display <mode>` | `up` `diff` | Output format: `compact` (default) or `table` |
+| `--name <db>` | `up` `diff` `query` | Target a specific database cluster |
+| `--tenant <key>` | `up` `diff` `query` | Target a specific tenant |
+| `--tables <list>` | `seed:dump` | Comma-separated list of tables to dump |
+| `--exclude <list>` | `seed:dump` | Comma-separated list of tables to exclude |
+| `--all` | `seed:dump` | Dump all tables without prompting |
+| `--limit <n>` | `seed:dump` | Max rows per table |
+| `--skip-auto` | `seed:dump` | Exclude auto-generated columns (SERIAL, now(), uuid) |
+| `--config <path>` | all | Path to a custom config file |
+| `--no-color` | all | Disable colored terminal output |
 
 ### Examples
 
 ```bash
-# Dry run — preview what would happen
+# Preview changes (compact tree view)
+npx xpg diff
+
+# Preview changes (table view)
+npx xpg diff --display table
+
+# Dry run — show generated SQL without executing
 npx xpg up --dry
 
 # Create database if needed, then migrate
 npx xpg up --create
 
-# View diff without executing
-npx xpg diff
+# Execute a raw SQL query
+npx xpg query "SELECT * FROM app_users LIMIT 10"
 
-# Execute a SQL query
-npx xpg query "SELECT * FROM users LIMIT 10"
+# Seed all files in the seed directory
+npx xpg seed
 
-# Initial seed
-npx xpg seed seeds/users.yml
+# Seed a specific file
+npx xpg seed users.yml
 
 # Target a specific cluster
 npx xpg up --name main
@@ -221,42 +248,93 @@ npx xpg up --drop-orphans
 
 ---
 
+## Data Seeding
+
+Create YAML seed files in your seed directory (default: `seeds/`, configurable via `SEED_PATH`):
+
+```yaml
+# seeds/app_users.yml
+app_users:
+  - user_name: "Admin"
+    user_email: "admin@example.com"
+    user_status: "active"
+  - user_name: "Test User"
+    user_email: "test@example.com"
+    user_status: "active"
+```
+
+```bash
+npx xpg seed               # all seed files
+npx xpg seed app_users.yml  # specific file
+```
+
+Seeding is **idempotent** — rows are only inserted if they don't already exist (matched on all provided fields).
+
+### Dumping Seeds from Database
+
+Generate seed files from live data:
+
+```bash
+# Interactive — confirms each table
+npx xpg seed:dump
+
+# Specific tables only
+npx xpg seed:dump --tables app_users,app_products
+
+# All tables, no prompts, limit 500 rows each
+npx xpg seed:dump --all --limit 500
+
+# Exclude large/log tables
+npx xpg seed:dump --all --exclude app_logs,app_sessions
+
+# Without auto-generated columns (IDs, timestamps, UUIDs)
+npx xpg seed:dump --all --skip-auto
+```
+
+Each table produces one `.yml` file in the seed directory. Existing files are overwritten.
+
+---
+
 ## Programmatic API
 
 Import **xpg** as a library in your Node.js / Next.js project:
 
-### Database — Query Service
+### Database — Query & Connection
 
 ```typescript
 import { Database, loadConfig } from '@appixar/xpg';
 
 const config = loadConfig();
-const cluster = config.postgres.DB['main'];
+const db = new Database(config.postgres.DB['main'], 'main');
 
-const db = new Database(cluster, 'main');
-
-// Automatic read/write routing
-const users = await db.query<{ user_id: number; user_name: string }>(
+// SELECT — auto-routed to read replica
+const users = await db.query(
   'SELECT * FROM app_users WHERE user_status = :status',
   { status: 'active' }
 );
 
-// Insert
+// INSERT — returns last insert id
 const id = await db.insert('app_users', {
   user_name: 'John',
   user_email: 'john@example.com',
 });
 
-// Update
-const affected = await db.update('app_users', 
-  { user_status: 'inactive' },       // data
-  { user_id: 1 }                      // condition
+// UPDATE — returns affected row count
+const affected = await db.update('app_users',
+  { user_status: 'inactive' },
+  { user_id: 1 }
 );
 
-// Update with string condition
-await db.update('app_users',
-  { user_status: 'inactive' },
-  'user_last_login < NOW() - INTERVAL \'30 days\''
+// DELETE — returns affected row count
+const deleted = await db.delete('app_users', { user_id: 1 });
+
+// FIND ONE — returns single row or null
+const user = await db.findOne('app_users', { user_email: 'john@example.com' });
+
+// FIND MANY — with options
+const recent = await db.findMany('app_users',
+  { user_status: 'active' },
+  { orderBy: 'user_date_insert DESC', limit: 10 }
 );
 
 // Close all pools when done
@@ -265,7 +343,7 @@ await Database.closeAll();
 
 ### Named Parameters
 
-Use `:paramName` syntax for safe, parameterized queries:
+Use `:paramName` syntax for safe, parameterized queries. Converted to `$1, $2...` internally:
 
 ```typescript
 const rows = await db.query(
@@ -274,22 +352,9 @@ const rows = await db.query(
 );
 ```
 
-### Read/Write Splitting
-
-`Database` automatically routes:
-
-- **SELECT / SHOW / EXPLAIN / WITH** → read replica pool
-- **INSERT / UPDATE / DELETE / CREATE / ALTER** → write (primary) pool
-
-Force primary for reads when you need consistency:
-
-```typescript
-const db = new Database(cluster, 'main', { primary: true });
-```
-
 ### Transactions
 
-Use `transaction()` for atomic multi-query operations. All queries inside the callback share the same connection, ensuring `BEGIN/COMMIT/ROLLBACK` works correctly:
+All queries inside a transaction share the same connection, ensuring atomicity:
 
 ```typescript
 const orderId = await db.transaction(async (client) => {
@@ -303,13 +368,26 @@ const orderId = await db.transaction(async (client) => {
     { orderId: order.id, productId: 7, qty: 3 }
   );
 
-  return order.id; // returned from transaction()
+  return order.id;
 });
 ```
 
 - **Auto-ROLLBACK** on error — if any query throws, the entire transaction is rolled back
-- **Named params** — `client.queryWith()` supports `:param` syntax just like `db.query()`
+- **Named params** — `client.queryWith()` supports `:param` syntax
 - **Connection safety** — the connection is automatically released back to the pool
+
+### Read/Write Splitting
+
+`Database` automatically routes queries based on the SQL command:
+
+- **SELECT / SHOW / EXPLAIN / WITH** → read replica pool
+- **INSERT / UPDATE / DELETE / CREATE / ALTER** → write (primary) pool
+
+Force all queries to primary when you need strong consistency:
+
+```typescript
+const db = new Database(cluster, 'main', { primary: true });
+```
 
 ### Run Migrations Programmatically
 
@@ -317,13 +395,11 @@ const orderId = await db.transaction(async (client) => {
 import { up } from '@appixar/xpg';
 
 const result = await up({
-  dry: false,
   create: true,
   mute: true,
 });
 
-console.log(`Executed ${result.executed} queries`);
-console.log(`Failed: ${result.failed.length}`);
+console.log(`Executed: ${result.executed}, Failed: ${result.failed.length}`);
 ```
 
 ---
@@ -363,7 +439,7 @@ HOST: <ENV.DB_HOST>
 PASS: <ENV.DB_PASS>
 ```
 
-**xpg automatically loads `.env` from your project root** — no need for `dotenv` or any extra setup. Just create a `.env` file:
+xpg automatically loads `.env` from your project root — no need for `dotenv`:
 
 ```bash
 DB_HOST=localhost
@@ -372,12 +448,10 @@ DB_PASS=secret
 DB_PORT=5432
 ```
 
-Rules:
-
-- System environment variables always take precedence over `.env`
+- System environment variables take precedence over `.env`
 - Supports `export` prefix: `export DB_HOST=localhost`
 - Supports inline comments: `DB_HOST=localhost # my local db`
-- If a variable is not defined anywhere, xpg prints a warning and uses an empty string
+- Missing variables print a warning and resolve to empty string
 
 ---
 
@@ -386,7 +460,7 @@ Rules:
 xpg looks for configuration in this order:
 
 1. `--config <path>` CLI argument
-2. `xpg.config.yml` in the current directory
+2. `xpg.config.yml` in the current directory (or parent dirs)
 3. `config/postgres.yml` + `config/custom_fields.yml` (PHP-compatible layout)
 
 ---
@@ -404,32 +478,8 @@ When you run `xpg up`:
    - New indexes/constraints → `CREATE INDEX`, `ADD CONSTRAINT`
    - Dropped indexes/constraints → `DROP INDEX`, `DROP CONSTRAINT`
    - Orphan tables (with `--drop-orphans`) → `DROP TABLE`
-5. **Execute** — Runs all generated SQL queries sequentially
-6. **Report** — Shows a summary of executed/failed queries
-
----
-
-## Supported PostgreSQL Types
-
-| YAML Type | PostgreSQL Type |
-|-----------|----------------|
-| `serial` | `integer` (auto-increment) |
-| `varchar(N)` | `character varying(N)` |
-| `integer` / `int` | `integer` |
-| `text` | `text` |
-| `timestamp` | `timestamp without time zone` |
-| `date` | `date` |
-| `boolean` | `boolean` |
-| `smallint` | `smallint` |
-| `bigint` | `bigint` |
-| `real` / `float` | `real` |
-| `double` | `double precision` |
-| `numeric(P,S)` | `numeric(P,S)` |
-| `json` | `json` |
-| `jsonb` | `jsonb` |
-| `uuid` | `uuid` |
-
----
+5. **Execute** — Runs generated SQL queries sequentially
+6. **Report** — Summary of executed/failed queries
 
 ## Requirements
 

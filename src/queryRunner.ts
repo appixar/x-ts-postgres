@@ -26,7 +26,7 @@ export async function runQuery(sql: string, options: QueryOptions = {}): Promise
         log.spin('Executing query...');
 
         try {
-            const result = await target.pg.query<any>(sql);
+            const result = await target.pg.query<Record<string, unknown>>(sql);
             log.stopSpinner();
 
             if (Array.isArray(result) && result.length > 0) {

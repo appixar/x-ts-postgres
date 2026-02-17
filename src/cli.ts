@@ -10,6 +10,7 @@ import { up } from './builder.js';
 import { runQuery } from './queryRunner.js';
 import { visualizeDiff } from './diffVisualizer.js';
 import { runSeed } from './seedRunner.js';
+import { runSeedDump } from './seedDumper.js';
 import * as log from './logger.js';
 
 const program = new Command();
@@ -112,6 +113,32 @@ program
     try {
       await runSeed({
         filename,
+        config: opts.config,
+      });
+    } catch (err) {
+      log.error((err as Error).message);
+      process.exit(1);
+    }
+  });
+
+// ─── seed:dump command ───
+program
+  .command('seed:dump')
+  .description('Generate YAML seed files from live database data')
+  .option('--tables <list>', 'Comma-separated list of tables to dump')
+  .option('--exclude <list>', 'Comma-separated list of tables to exclude')
+  .option('--all', 'Dump all tables without prompting')
+  .option('--limit <n>', 'Max rows per table', parseInt)
+  .option('--skip-auto', 'Exclude auto-generated columns (SERIAL, now(), uuid, etc.)')
+  .option('--config <path>', 'Path to config file')
+  .action(async (opts) => {
+    try {
+      await runSeedDump({
+        tables: opts.tables,
+        exclude: opts.exclude,
+        all: opts.all,
+        limit: opts.limit,
+        skipAuto: opts.skipAuto,
         config: opts.config,
       });
     } catch (err) {

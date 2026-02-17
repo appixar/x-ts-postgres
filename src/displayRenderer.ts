@@ -110,15 +110,3 @@ function renderCompact(queries: QueuedQuery[]): void {
     }
 }
 
-/**
- * Determine the predominant action type to color the table header.
- * Priority: DROP > CREATE > ALTER
- */
-function getPredominantAction(queries: QueuedQuery[]): ActionStyle {
-    const hasCreate = queries.some(q => q.type === 'CREATE_TABLE');
-    const hasDrop = queries.some(q => q.type === 'DROP_TABLE');
-
-    if (hasDrop) return ACTION_STYLES.DROP_TABLE;
-    if (hasCreate) return ACTION_STYLES.CREATE_TABLE;
-    return ACTION_STYLES.ALTER_COLUMN;
-}
