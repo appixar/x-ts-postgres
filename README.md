@@ -208,6 +208,7 @@ npx xpg <command> [options]
 | `--name <db>` | `up` `diff` `query` | Target a specific database cluster |
 | `--tenant <key>` | `up` `diff` `query` | Target a specific tenant |
 | `--yes` | `seed` | Skip per-table confirmation prompts |
+| `--table <list>` | `seed` | Comma-separated list of tables to seed |
 | `--tables <list>` | `seed:dump` | Comma-separated list of tables to dump |
 | `--exclude <list>` | `seed:dump` | Comma-separated list of tables to exclude |
 | `--all` | `seed:dump` | Dump all tables without prompting |
@@ -240,6 +241,12 @@ npx xpg seed
 # Seed a specific file
 npx xpg seed users.yml
 
+# Seed specific tables only
+npx xpg seed --table app_users,app_config
+
+# Seed without confirmation prompts
+npx xpg seed --yes
+
 # Target a specific cluster
 npx xpg up --name main
 
@@ -265,11 +272,15 @@ app_users:
 ```
 
 ```bash
-npx xpg seed               # all seed files
-npx xpg seed app_users.yml  # specific file
+npx xpg seed                           # all seed files
+npx xpg seed app_users.yml              # specific file
+npx xpg seed --table app_users          # specific table(s)
+npx xpg seed --table app_users --yes    # skip confirmations
 ```
 
-Seeding uses **upsert** — rows are inserted if new, or updated if the primary key already exists.
+Seeding is **interactive by default** — each table is analyzed and you confirm before applying. Use `--yes` to skip prompts.
+
+Uses **upsert** — rows are inserted if new, or updated if the primary key already exists. Rows already matching the seed data are skipped.
 
 ### Dumping Seeds from Database
 
