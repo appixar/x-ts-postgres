@@ -13,18 +13,10 @@ export interface SeedOptions {
     yes?: boolean;
 }
 
-// ─── Types for the two-pass approach ───
-
 interface SeedTable {
-    /** Table name as written in YAML */ 
-    yamlName: string;
-    /** Final table name (with prefix applied) */
     finalName: string;
-    /** Rows parsed from YAML */
     rows: Record<string, unknown>[];
-    /** Primary key columns */
     pkColumns: string[];
-    /** Source file name */
     sourceFile: string;
 }
 
@@ -40,13 +32,13 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         return;
     }
 
-    // Identify files to process
+    // Identify files
     let filesToProcess: string[] = [];
     if (options.filename) {
         const fullPath = resolve(seedPath, options.filename);
         if (!existsSync(fullPath)) {
-            const withExt = fullPath.endsWith('.yml') || fullPath.endsWith('.yaml') 
-                ? fullPath 
+            const withExt = fullPath.endsWith('.yml') || fullPath.endsWith('.yaml')
+                ? fullPath
                 : fullPath + '.yml';
             if (existsSync(withExt)) {
                 filesToProcess = [withExt];
@@ -82,8 +74,8 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         const targets = engine.getTargets();
         const iter = targets.next();
         if (iter.done) {
-             log.fail('No valid database target found.');
-             return;
+            log.fail('No valid database target found.');
+            return;
         }
         const target = iter.value;
         const { pg, config } = target;
@@ -91,7 +83,7 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         log.header(`Seeding ${target.id} (${target.config.NAME})`, 'magenta');
 
         // ────────────────────────────────────
-        // PASS 1: Parse all files, detect PKs, build preview
+        // PASS 1: Parse files, detect PKs
         // ────────────────────────────────────
 
         log.spin('Analyzing seed files...');
@@ -101,12 +93,13 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
 
         for (const file of filesToProcess) {
             const fileName = file.split('/').pop()!;
-            
+
             let data: Record<string, unknown[]>;
             try {
                 const content = readFileSync(file, 'utf-8');
                 data = YAML.parse(content);
             } catch (err) {
+                log.stopSpinner();
                 log.fail(`Failed to parse ${fileName}: ${(err as Error).message}`);
                 continue;
             }
@@ -141,7 +134,6 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                 }
 
                 seedTables.push({
-                    yamlName: tableName,
                     finalName: finalTableName,
                     rows: rows.filter(r => typeof r === 'object' && r !== null) as Record<string, unknown>[],
                     pkColumns: pkCache.get(finalTableName)!,
@@ -158,51 +150,101 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         }
 
         // ────────────────────────────────────
-        // Preview
-        // ────────────────────────────────────
-
-        console.log('');
-        for (let i = 0; i < seedTables.length; i++) {
-            const st = seedTables[i];
-            const isLast = i === seedTables.length - 1;
-            const connector = isLast ? '└─' : '├─';
-            const rowLabel = st.rows.length === 1 ? 'row' : 'rows';
-            const mode = st.pkColumns.length > 0
-                ? chalk.cyan('upsert')
-                : chalk.yellow('insert');
-
-            console.log(`  ${chalk.dim(connector)} ${chalk.white.bold(st.finalName)} ${chalk.dim('→')} ${chalk.green(`${st.rows.length} ${rowLabel}`)} ${chalk.dim('via')} ${mode} ${chalk.dim(`(${st.sourceFile})`)}`);
-        }
-        console.log('');
-
-        // ────────────────────────────────────
-        // PASS 2: Apply with per-table confirmation
+        // PASS 2: Per-table analyze → confirm → apply
         // ────────────────────────────────────
 
         let totalInserted = 0;
         let totalUpdated = 0;
         let totalSkipped = 0;
+        let totalUpToDate = 0;
         let totalErrors = 0;
 
-        for (let i = 0; i < seedTables.length; i++) {
-            const st = seedTables[i];
-            const rowLabel = st.rows.length === 1 ? 'row' : 'rows';
+        console.log('');
 
-            // Confirm per table (unless --yes)
+        for (const st of seedTables) {
+            // ── Analyze: count inserts vs updates ──
+            log.spin(`Analyzing ${st.finalName}...`);
+
+            let willInsert = 0;
+            let willUpdate = 0;
+
+            if (st.pkColumns.length > 0) {
+                for (const row of st.rows) {
+                    const pkWhere = st.pkColumns
+                        .map((k, i) => `"${k}" = $${i + 1}`)
+                        .join(' AND ');
+                    const pkValues = st.pkColumns.map(k => row[k]);
+
+                    try {
+                        const existing = await pg.query<Record<string, unknown>>(
+                            `SELECT * FROM "${st.finalName}" WHERE ${pkWhere} LIMIT 1`,
+                            pkValues
+                        );
+
+                        if (existing.length === 0) {
+                            willInsert++;
+                        } else {
+                            // Compare non-PK fields to detect real changes
+                            const dbRow = existing[0];
+                            const nonPkKeys = Object.keys(row).filter(k => !st.pkColumns.includes(k));
+                            const hasDiff = nonPkKeys.some(k => {
+                                const yamlVal = row[k];
+                                const dbVal = dbRow[k];
+                                // Normalize for comparison
+                                if (yamlVal === null && dbVal === null) return false;
+                                if (yamlVal === null || dbVal === null) return true;
+                                // JSON/object comparison
+                                if (typeof yamlVal === 'object' && typeof dbVal === 'object') {
+                                    return JSON.stringify(yamlVal) !== JSON.stringify(dbVal);
+                                }
+                                // Date comparison
+                                if (dbVal instanceof Date) {
+                                    return dbVal.toISOString() !== String(yamlVal);
+                                }
+                                // String/number coercion
+                                return String(yamlVal) !== String(dbVal);
+                            });
+                            if (hasDiff) willUpdate++;
+                        }
+                    } catch {
+                        willInsert++;
+                    }
+                }
+            } else {
+                willInsert = st.rows.length;
+            }
+
+            log.stopSpinner();
+
+            // ── Preview line ──
+            const parts: string[] = [];
+            if (willInsert > 0) parts.push(chalk.green(`${willInsert} to insert`));
+            if (willUpdate > 0) parts.push(chalk.cyan(`${willUpdate} to update`));
+            const isUpToDate = willInsert === 0 && willUpdate === 0;
+
+            if (isUpToDate) {
+                log.say(`  ${chalk.green('✔')} ${chalk.white.bold(st.finalName)} ${chalk.dim('→')} ${chalk.dim('up to date')}`);
+                totalUpToDate++;
+                continue;
+            }
+
+            const preview = `  ${chalk.blue('◆')} ${chalk.white.bold(st.finalName)} ${chalk.dim('→')} ${parts.join(chalk.dim(', '))}`;
+            console.log(preview);
+
+            // ── Confirm ──
             if (!options.yes) {
                 const ok = await confirm({
-                    message: `Seed ${st.finalName} (${st.rows.length} ${rowLabel})?`,
+                    message: `Apply to ${st.finalName}?`,
                     default: true,
                 });
                 if (!ok) {
-                    log.say(`  ${chalk.dim('○')} ${chalk.dim(st.finalName)} ${chalk.dim('skipped')}`, 'gray');
+                    log.say(`    ${chalk.dim('○ skipped')}`, 'gray');
                     totalSkipped += st.rows.length;
                     continue;
                 }
             }
 
-            log.spin(`Seeding ${st.finalName}...`);
-
+            // ── Apply ──
             let inserted = 0;
             let updated = 0;
             let errors = 0;
@@ -234,7 +276,6 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                             inserted++;
                         }
                     } else {
-                        // No PK → check-then-insert
                         const whereClauses = keys.map((k, idx) => `"${k}" = $${idx + 1}`).join(' AND ');
                         const checkRes = await pg.query(
                             `SELECT 1 FROM "${st.finalName}" WHERE ${whereClauses} LIMIT 1`,
@@ -255,8 +296,7 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                     errors++;
                     totalErrors++;
                     if (errors === 1) {
-                        log.stopSpinner();
-                        log.fail(`${st.finalName}: ${(err as Error).message}`);
+                        log.fail(`  ${st.finalName}: ${(err as Error).message}`);
                     }
                 }
             }
@@ -264,19 +304,14 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
             totalInserted += inserted;
             totalUpdated += updated;
 
-            // Result line
-            const parts: string[] = [];
-            if (inserted > 0) parts.push(chalk.green(`${inserted} inserted`));
-            if (updated > 0) parts.push(chalk.cyan(`${updated} updated`));
-            if (errors > 0) parts.push(chalk.red(`${errors} failed`));
+            // Result
+            const resultParts: string[] = [];
+            if (inserted > 0) resultParts.push(chalk.green(`${inserted} inserted`));
+            if (updated > 0) resultParts.push(chalk.cyan(`${updated} updated`));
+            if (errors > 0) resultParts.push(chalk.red(`${errors} failed`));
 
             const icon = errors > 0 ? chalk.red('✖') : chalk.green('✔');
-            const label = parts.length > 0
-                ? `${st.finalName} ${chalk.dim('→')} ${parts.join(chalk.dim(', '))}`
-                : `${st.finalName} ${chalk.dim('→')} ${chalk.dim('up to date')}`;
-
-            if (errors === 0) log.stopSpinner();
-            log.say(`  ${icon} ${label}`);
+            log.say(`    ${icon} ${resultParts.join(chalk.dim(', '))}`);
         }
 
         // ────────────────────────────────────
@@ -287,6 +322,7 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         const summaryParts: string[] = [];
         if (totalInserted > 0) summaryParts.push(chalk.green(`${totalInserted} inserted`));
         if (totalUpdated > 0) summaryParts.push(chalk.cyan(`${totalUpdated} updated`));
+        if (totalUpToDate > 0) summaryParts.push(chalk.dim(`${totalUpToDate} up to date`));
         if (totalSkipped > 0) summaryParts.push(chalk.dim(`${totalSkipped} skipped`));
         if (totalErrors > 0) summaryParts.push(chalk.red(`${totalErrors} failed`));
 
