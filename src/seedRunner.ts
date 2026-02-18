@@ -25,66 +25,69 @@ interface SeedTable {
 // ─── Value normalization ───
 // Converts pg driver types and YAML parsed types to a common
 // representation so identical data always compares as equal.
-//   numeric/decimal → pg returns string "180.00", YAML has number 180
-//   timestamp       → pg returns Date, YAML has ISO string
-//   jsonb           → key order may differ between pg and YAML
-//   boolean         → should match directly but coerce for safety
 
-function normalizeObject(obj: Record<string, unknown>): string {
-    const sortedKeys = Object.keys(obj).sort();
-    const normalized: Record<string, unknown> = {};
-    for (const k of sortedKeys) {
-        normalized[k] = normalize(obj[k]);
+function sortedStringify(obj: Record<string, unknown>): string {
+    const sorted: Record<string, unknown> = {};
+    for (const k of Object.keys(obj).sort()) {
+        sorted[k] = normalizeValue(obj[k]);
     }
-    return JSON.stringify(normalized);
+    return JSON.stringify(sorted);
 }
 
-function normalize(v: unknown): unknown {
+// Extract wall-clock datetime string from a Date object.
+// Uses LOCAL components (not UTC) because pg creates Date objects
+// for "timestamp without time zone" using local time interpretation.
+function dateToWallClock(d: Date): string {
+    const pad = (n: number, len = 2) => String(n).padStart(len, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
+        + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+// Strip timezone info from a date string → raw datetime
+// "2026-02-15T01:25:11.068Z"     → "2026-02-15 01:25:11.068"
+// "2026-02-15 01:25:11.068+00"   → "2026-02-15 01:25:11.068"
+// "2026-02-15 01:25:11.068"      → "2026-02-15 01:25:11.068"
+function stripTimezone(s: string): string {
+    return s.replace('T', ' ').replace(/[Z]$/, '').replace(/[+-]\d{2}(:\d{2})?$/, '');
+}
+
+function normalizeValue(v: unknown): unknown {
     if (v === null || v === undefined) return null;
 
-    // Date → millisecond timestamp
-    if (v instanceof Date) return v.getTime();
+    // Date → wall-clock string (timezone-agnostic)
+    if (v instanceof Date) return dateToWallClock(v);
 
-    // Object/Array → recursively normalize, then sorted stringify
     if (typeof v === 'object') {
-        if (Array.isArray(v)) {
-            return JSON.stringify(v.map(normalize));
-        }
-        return normalizeObject(v as Record<string, unknown>);
+        if (Array.isArray(v)) return v.map(normalizeValue);
+        return sortedStringify(v as Record<string, unknown>);
     }
 
-    // Boolean → keep as-is
     if (typeof v === 'boolean') return v;
-
-    // Number → keep as number for precision
     if (typeof v === 'number') return v;
 
-    // String → try to interpret as a richer type
     if (typeof v === 'string') {
-        // JSON string from text/varchar column storing JSON
-        // e.g. '{"color":"#f472b6","toyType":"BEAR"}'
-        if ((v.startsWith('{') && v.endsWith('}')) || (v.startsWith('[') && v.endsWith(']'))) {
+        // JSON string from text/varchar column → parse and normalize
+        const trimmed = v.trim();
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+            (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
             try {
-                const parsed = JSON.parse(v);
+                const parsed = JSON.parse(trimmed);
                 if (typeof parsed === 'object' && parsed !== null) {
-                    if (Array.isArray(parsed)) {
-                        return JSON.stringify(parsed.map(normalize));
-                    }
-                    return normalizeObject(parsed as Record<string, unknown>);
+                    if (Array.isArray(parsed)) return parsed.map(normalizeValue);
+                    return sortedStringify(parsed as Record<string, unknown>);
                 }
-            } catch { /* not valid JSON, treat as string */ }
+            } catch { /* not JSON */ }
         }
 
-        // Numeric string from pg driver ("180", "2.50", "-3.14")
-        if (v.trim() !== '' && !isNaN(Number(v))) {
-            return Number(v);
+        // Numeric string → number ("180", "2.50")
+        if (trimmed !== '' && !isNaN(Number(trimmed))) {
+            return Number(trimmed);
         }
 
-        // Date string → timestamp
-        // Matches both "2026-02-15T01:25:11.068Z" and "2026-02-15 01:25:11.068"
-        if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(v)) {
-            const d = new Date(v.includes('T') ? v : v.replace(' ', 'T') + 'Z');
-            if (!isNaN(d.getTime())) return d.getTime();
+        // Date string → strip timezone, normalize to wall-clock format
+        // "2026-02-15T01:25:11.068Z" → "2026-02-15 01:25:11.068"
+        if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(trimmed)) {
+            return stripTimezone(trimmed);
         }
 
         return v;
@@ -93,8 +96,17 @@ function normalize(v: unknown): unknown {
     return String(v);
 }
 
-function valuesMatch(yamlVal: unknown, dbVal: unknown): boolean {
-    return normalize(yamlVal) === normalize(dbVal);
+function valuesMatch(a: unknown, b: unknown): boolean {
+    const na = normalizeValue(a);
+    const nb = normalizeValue(b);
+
+    // Both arrays → element-wise
+    if (Array.isArray(na) && Array.isArray(nb)) {
+        if (na.length !== nb.length) return false;
+        return na.every((v, i) => JSON.stringify(v) === JSON.stringify(nb[i]));
+    }
+
+    return na === nb;
 }
 
 
@@ -164,7 +176,7 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         // PASS 1: Parse files, detect PKs
         // ────────────────────────────────────
 
-        log.spin('Analyzing seed files...');
+
 
         const pkCache = new Map<string, string[]>();
         const seedTables: SeedTable[] = [];
@@ -219,7 +231,6 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
             }
         }
 
-        log.stopSpinner();
 
         // Filter by --table if specified
         if (options.table) {
@@ -252,11 +263,10 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         let totalUpToDate = 0;
         let totalErrors = 0;
 
-        for (const st of seedTables) {
-            console.log('');
+        for (let i = 0; i < seedTables.length; i++) {
+            const st = seedTables[i];
 
             // ── Analyze ──
-            log.spin(`Analyzing ${st.finalName}...`);
 
             let willInsert = 0;
             let willUpdate = 0;
@@ -295,7 +305,6 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                 willInsert = st.rows.length;
             }
 
-            log.stopSpinner();
 
             // ── Preview ──
             const isUpToDate = willInsert === 0 && willUpdate === 0;
@@ -320,7 +329,7 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                     default: true,
                 });
                 if (!ok) {
-                    console.log(`  ${chalk.dim('  ○ skipped')}`);
+                    console.log(`  ${chalk.dim('○ skipped')}`);
                     totalSkipped += st.rows.length;
                     continue;
                 }
@@ -393,7 +402,7 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
             if (errors > 0) resultParts.push(chalk.red(`${errors} failed`));
 
             const icon = errors > 0 ? chalk.red('✖') : chalk.green('✔');
-            console.log(`    ${icon} ${resultParts.join(chalk.dim(', '))}`);
+            console.log(`  ${icon} ${resultParts.join(chalk.dim(', '))}`);
         }
 
         // ────────────────────────────────────

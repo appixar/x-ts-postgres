@@ -18,6 +18,9 @@ POSTGRES:
   # Path to seed files (relative to config dir, default: seeds)
   SEED_PATH: src/database/seeds
 
+  # Suffix appended to table name in seed:dump files (e.g. ".seed" → table.seed.yml)
+  # SEED_SUFFIX: ".seed"
+
   # Display mode for diff/up output: table | compact (default)
   DISPLAY_MODE: table
 

@@ -196,6 +196,10 @@ POSTGRES:
       PREF: app_
       PATH: [database]
 
+  # SEED_PATH: seeds         # Path to seed files (default: seeds)
+  # SEED_SUFFIX: ".seed"     # Suffix for seed:dump files (e.g. table.seed.yml)
+  # DISPLAY_MODE: table      # Display mode: compact (default) | table
+
   CUSTOM_FIELDS:
     "id":
       Type: serial

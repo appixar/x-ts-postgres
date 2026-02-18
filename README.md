@@ -55,6 +55,7 @@ POSTGRES:
       PATH: [database]    # Directories containing .yml schema files
 
   # SEED_PATH: seeds      # Path to seed files (default: seeds)
+  # SEED_SUFFIX: ".seed"  # Suffix for seed:dump filenames (e.g. table.seed.yml)
   # DISPLAY_MODE: table   # Display mode: compact (default) | table
 
   CUSTOM_FIELDS:
@@ -303,7 +304,20 @@ npx xpg seed:dump --all --exclude app_logs,app_sessions
 npx xpg seed:dump --all --skip-auto
 ```
 
-Each table produces one `.yml` file in the seed directory. Existing files are overwritten.
+#### Smart File Updates
+
+When dumping, xpg checks if a seed file already exists for the table (by scanning YAML root keys in all `.yml`/`.yaml` files in the seed directory). If found, the existing file is **updated in-place** — preserving other tables that may share the same file. If no existing file is found, a new one is created.
+
+#### SEED_SUFFIX
+
+By default, dumped files are named `<table>.yml`. You can configure a suffix so files are named `<table><suffix>.yml`:
+
+```yaml
+POSTGRES:
+  SEED_SUFFIX: ".seed"   # → app_users.seed.yml, app_config.seed.yml
+```
+
+The suffix only affects **new** files created by `seed:dump`. If an existing file already contains the table's data, it is updated regardless of its filename. The `seed` command reads all `.yml`/`.yaml` files in `SEED_PATH`, so suffixed files are picked up automatically.
 
 ---
 

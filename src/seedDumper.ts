@@ -3,9 +3,10 @@
 // ─────────────────────────────────────────────
 // Generates YAML seed files from live database data.
 // Creates one .yml file per table in the seed directory.
+// If a seed file already exists for a table, it is updated in-place.
 
-import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { join, basename } from 'node:path';
 import { confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 import YAML from 'yaml';
@@ -43,10 +44,37 @@ function isAutoColumn(columnDefault: string | null, dataType: string): boolean {
     return AUTO_DEFAULT_PATTERNS.some(p => p.test(columnDefault));
 }
 
+/**
+ * Find an existing seed file that contains data for a given table.
+ * Scans all .yml/.yaml files in seedPath and checks if any has the table
+ * as a top-level YAML key. Returns the full path if found, undefined otherwise.
+ */
+function findExistingSeedFile(seedPath: string, tableName: string): string | undefined {
+    let files: string[];
+    try {
+        files = readdirSync(seedPath).filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+    } catch {
+        return undefined;
+    }
+
+    for (const file of files) {
+        const filePath = join(seedPath, file);
+        try {
+            const content = readFileSync(filePath, 'utf-8');
+            const data = YAML.parse(content);
+            if (data && typeof data === 'object' && tableName in data) {
+                return filePath;
+            }
+        } catch { /* skip unparseable files */ }
+    }
+
+    return undefined;
+}
+
 export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> {
     const engine = new SchemaEngine({ config: options.config });
     const cfg = engine.getConfig();
-    const { seedPath } = cfg;
+    const { seedPath, seedSuffix } = cfg;
 
     // Ensure seed directory exists
     if (!existsSync(seedPath)) {
@@ -190,24 +218,61 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
                 return obj;
             });
 
-            // Build YAML
+            // Build YAML content for this table
             const yamlData = { [table]: serialized };
-            const yamlStr = YAML.stringify(yamlData, {
-                lineWidth: 0,
-                defaultStringType: 'QUOTE_DOUBLE',
-                defaultKeyType: 'PLAIN',
-            });
 
-            // Write file
-            const filePath = join(seedPath, `${table}.yml`);
-            const existed = existsSync(filePath);
-            writeFileSync(filePath, yamlStr, 'utf-8');
+            // Resolve target file:
+            // 1. Check if an existing seed file already contains this table → update it
+            // 2. Otherwise, create a new file using seedSuffix
+            const existingFile = findExistingSeedFile(seedPath, table);
+            let filePath: string;
+            let existed: boolean;
+
+            if (existingFile) {
+                // Update existing file — merge/replace this table's data
+                filePath = existingFile;
+                existed = true;
+
+                try {
+                    const existingContent = readFileSync(filePath, 'utf-8');
+                    const existingData = YAML.parse(existingContent) ?? {};
+                    // Replace only this table's key, preserve other tables in the file
+                    existingData[table] = serialized;
+
+                    const yamlStr = YAML.stringify(existingData, {
+                        lineWidth: 0,
+                        defaultStringType: 'QUOTE_DOUBLE',
+                        defaultKeyType: 'PLAIN',
+                    });
+                    writeFileSync(filePath, yamlStr, 'utf-8');
+                } catch {
+                    // If we can't parse/merge, overwrite with just this table
+                    const yamlStr = YAML.stringify(yamlData, {
+                        lineWidth: 0,
+                        defaultStringType: 'QUOTE_DOUBLE',
+                        defaultKeyType: 'PLAIN',
+                    });
+                    writeFileSync(filePath, yamlStr, 'utf-8');
+                }
+            } else {
+                // Create new file with suffix
+                filePath = join(seedPath, `${table}${seedSuffix}.yml`);
+                existed = existsSync(filePath);
+
+                const yamlStr = YAML.stringify(yamlData, {
+                    lineWidth: 0,
+                    defaultStringType: 'QUOTE_DOUBLE',
+                    defaultKeyType: 'PLAIN',
+                });
+                writeFileSync(filePath, yamlStr, 'utf-8');
+            }
 
             const action = existed ? 'updated' : 'created';
             const icon = existed ? chalk.cyan('✎') : chalk.green('✚');
             const rowLabel = serialized.length === 1 ? 'row' : 'rows';
+            const fileName = basename(filePath);
 
-            console.log(`  ${chalk.dim(connector)} ${icon} ${chalk.white.bold(table)} ${chalk.dim('→')} ${chalk.green(`${serialized.length} ${rowLabel}`)} ${chalk.dim(`(${action})`)}`);
+            console.log(`  ${chalk.dim(connector)} ${icon} ${chalk.white.bold(table)} ${chalk.dim('→')} ${chalk.green(`${serialized.length} ${rowLabel}`)} ${chalk.dim(`(${action} ${fileName})`)}`);
 
             dumpedCount++;
             totalRows += serialized.length;
