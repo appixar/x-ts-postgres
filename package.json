@@ -1,0 +1,51 @@
+{
+    "name": "@appixar/xpg",
+    "version": "1.0.26",
+    "description": "YAML-driven PostgreSQL schema management, diff-based migrations, and query service",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "bin": {
+        "xpg": "./dist/cli.js"
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsx src/cli.ts",
+        "start": "node dist/cli.js",
+        "test": "tsx --test src/__tests__/*.test.ts"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "dependencies": {
+        "@inquirer/prompts": "^8.2.1",
+        "boxen": "^8.0.1",
+        "chalk": "^5.3.0",
+        "cli-table3": "^0.6.5",
+        "commander": "^12.1.0",
+        "ora": "^9.3.0",
+        "pg": "^8.13.1",
+        "yaml": "^2.6.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "@types/pg": "^8.11.10",
+        "tsx": "^4.19.0",
+        "typescript": "^5.7.0"
+    },
+    "files": [
+        "dist",
+        "xpg.config.yml-sample"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/appixar/x-ts-postgres.git"
+    },
+    "license": "MIT"
+}

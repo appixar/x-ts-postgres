@@ -1,0 +1,57 @@
+#────────────────────────────────────
+# xpg configuration sample
+#────────────────────────────────────
+# Copy this file to xpg.config.yml and fill in your credentials.
+# Environment variables are interpolated with <ENV.VAR_NAME> syntax.
+
+POSTGRES:
+  DB:
+    "main":
+      NAME: my_database
+      HOST: <ENV.DB_HOST>
+      USER: <ENV.DB_USER>
+      PASS: <ENV.DB_PASS>
+      PORT: <ENV.DB_PORT>
+      PREF: app_
+      PATH: [src/database]
+
+  # Path to seed files (relative to config dir, default: seeds)
+  SEED_PATH: src/database/seeds
+
+  # Suffix appended to table name in seed:dump files (e.g. ".seed" → table.seed.yml)
+  # SEED_SUFFIX: ".seed"
+
+  # Display mode for diff/up output: table | compact (default)
+  DISPLAY_MODE: table
+
+  CUSTOM_FIELDS:
+    "id":
+      Type: serial
+      Key: PRI
+    "str":
+      Type: varchar(64)
+    "text":
+      Type: text
+    "int":
+      Type: integer
+    "float":
+      Type: real
+    "date":
+      Type: timestamp
+    "email":
+      Type: varchar(128)
+    "phone":
+      Type: varchar(11)
+    "now":
+      Type: timestamp
+      Default: now()
+    "pid":
+      Type: varchar(16)
+      Key: UNI
+      Default: encode(gen_random_bytes(8), 'hex')
+    "pid64":
+      Type: varchar(64)
+      Key: UNI
+      Default: encode(gen_random_bytes(16), 'hex')
+    "decimal":
+      Type: numeric
