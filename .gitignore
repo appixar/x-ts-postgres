@@ -1,6 +1,7 @@
 node_modules/
 dist/
 test/
+seeds/
 *.js
 *.d.ts
 *.map
