@@ -209,8 +209,7 @@ npx xpg <command> [options]
 | `--name <db>` | `up` `diff` `query` | Target a specific database cluster |
 | `--tenant <key>` | `up` `diff` `query` | Target a specific tenant |
 | `--yes` | `seed` | Skip per-table confirmation prompts |
-| `--table <list>` | `seed` | Comma-separated list of tables to seed |
-| `--tables <list>` | `seed:dump` | Comma-separated list of tables to dump |
+| `--table <list>` | `seed` `seed:dump` | Comma-separated list of tables to seed/dump |
 | `--exclude <list>` | `seed:dump` | Comma-separated list of tables to exclude |
 | `--all` | `seed:dump` | Dump all tables without prompting |
 | `--limit <n>` | `seed:dump` | Max rows per table |
@@ -292,7 +291,7 @@ Generate seed files from live data:
 npx xpg seed:dump
 
 # Specific tables only
-npx xpg seed:dump --tables app_users,app_products
+npx xpg seed:dump --table app_users,app_products
 
 # All tables, no prompts, limit 500 rows each
 npx xpg seed:dump --all --limit 500

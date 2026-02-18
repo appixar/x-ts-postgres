@@ -129,7 +129,7 @@ program
 program
   .command('seed:dump')
   .description('Generate YAML seed files from live database data')
-  .option('--tables <list>', 'Comma-separated list of tables to dump')
+  .option('--table <list>', 'Comma-separated list of tables to dump')
   .option('--exclude <list>', 'Comma-separated list of tables to exclude')
   .option('--all', 'Dump all tables without prompting')
   .option('--limit <n>', 'Max rows per table', parseInt)
@@ -138,7 +138,7 @@ program
   .action(async (opts) => {
     try {
       await runSeedDump({
-        tables: opts.tables,
+        tables: opts.table,
         exclude: opts.exclude,
         all: opts.all,
         limit: opts.limit,
