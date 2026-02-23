@@ -54,6 +54,7 @@ program
 program
   .command('up')
   .description('Run database migrations (create/update/drop tables from YAML schemas)')
+  .option('--yes', 'Skip confirmation prompts')
   .option('--create', 'Create database if it does not exist')
   .option('--name <db>', 'Target specific database cluster by NAME')
   .option('--tenant <key>', 'Target specific tenant key')
@@ -65,6 +66,7 @@ program
   .action(async (opts) => {
     try {
       const result = await up({
+        yes: opts.yes,
         create: opts.create,
         name: opts.name,
         tenant: opts.tenant,
