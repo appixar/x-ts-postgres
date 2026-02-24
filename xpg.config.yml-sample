@@ -51,11 +51,11 @@ POSTGRES:
       Type: timestamp
       Default: now()
     "pid":
-      Type: varchar(16)
+      Type: varchar(12)
       Key: UNI
-      Default: encode(gen_random_bytes(8), 'hex')
-    "pid64":
-      Type: varchar(64)
+      Default: encode(gen_random_bytes(6), 'hex')
+    "pid32":
+      Type: varchar(32)
       Key: UNI
       Default: encode(gen_random_bytes(16), 'hex')
     "decimal":
