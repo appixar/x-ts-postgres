@@ -19,6 +19,8 @@ interface SeedTable {
     finalName: string;
     rows: Record<string, unknown>[];
     pkColumns: string[];
+    /** Columns used for matching existing rows (PK if present in data, else UNIQUE) */
+    matchColumns: string[];
     sourceFile: string;
 }
 
@@ -222,10 +224,50 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                     }
                 }
 
+                const pkCols = pkCache.get(finalTableName)!;
+                const sampleRow = rows.find(r => typeof r === 'object' && r !== null) as Record<string, unknown> | undefined;
+                const seedKeys = sampleRow ? Object.keys(sampleRow) : [];
+
+                // Determine match columns: use PK if all PK cols are in seed data,
+                // otherwise fall back to UNIQUE columns present in seed data
+                let matchColumns = pkCols.filter(k => seedKeys.includes(k));
+
+                if (matchColumns.length === 0 || matchColumns.length < pkCols.length) {
+                    // PK not fully in seed data — look for UNIQUE constraints
+                    try {
+                        const uniResult = await pg.query<{ column_name: string; constraint_name: string }>(
+                            `SELECT kcu.column_name, kcu.constraint_name
+                             FROM pg_constraint con
+                             JOIN information_schema.key_column_usage kcu
+                               ON con.conname = kcu.constraint_name
+                              AND kcu.table_schema = 'public'
+                             WHERE con.conrelid = :tbl::regclass
+                               AND con.contype = 'u'
+                             ORDER BY kcu.constraint_name, kcu.ordinal_position`,
+                            { tbl: finalTableName }
+                        );
+
+                        // Group by constraint — pick the first constraint where ALL columns are in seed data
+                        const byConstraint = new Map<string, string[]>();
+                        for (const r of uniResult) {
+                            if (!byConstraint.has(r.constraint_name)) byConstraint.set(r.constraint_name, []);
+                            byConstraint.get(r.constraint_name)!.push(r.column_name);
+                        }
+
+                        for (const cols of byConstraint.values()) {
+                            if (cols.every(c => seedKeys.includes(c))) {
+                                matchColumns = cols;
+                                break;
+                            }
+                        }
+                    } catch { /* ignore */ }
+                }
+
                 seedTables.push({
                     finalName: finalTableName,
                     rows: rows.filter(r => typeof r === 'object' && r !== null) as Record<string, unknown>[],
-                    pkColumns: pkCache.get(finalTableName)!,
+                    pkColumns: pkCols,
+                    matchColumns,
                     sourceFile: fileName,
                 });
             }
@@ -272,25 +314,25 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
             let willUpdate = 0;
             let willMatch = 0;
 
-            if (st.pkColumns.length > 0) {
+            if (st.matchColumns.length > 0) {
                 for (const row of st.rows) {
-                    const pkWhere = st.pkColumns
+                    const matchWhere = st.matchColumns
                         .map((k, i) => `"${k}" = $${i + 1}`)
                         .join(' AND ');
-                    const pkValues = st.pkColumns.map(k => row[k]);
+                    const matchValues = st.matchColumns.map(k => row[k]);
 
                     try {
                         const existing = await pg.query<Record<string, unknown>>(
-                            `SELECT * FROM "${st.finalName}" WHERE ${pkWhere} LIMIT 1`,
-                            pkValues
+                            `SELECT * FROM "${st.finalName}" WHERE ${matchWhere} LIMIT 1`,
+                            matchValues
                         );
 
                         if (existing.length === 0) {
                             willInsert++;
                         } else {
                             const dbRow = existing[0];
-                            const nonPkKeys = Object.keys(row).filter(k => !st.pkColumns.includes(k));
-                            const hasDiff = nonPkKeys.some(k => !valuesMatch(row[k], dbRow[k]));
+                            const nonMatchKeys = Object.keys(row).filter(k => !st.matchColumns.includes(k));
+                            const hasDiff = nonMatchKeys.some(k => !valuesMatch(row[k], dbRow[k]));
                             if (hasDiff) {
                                 willUpdate++;
                             } else {
@@ -325,7 +367,7 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
             // ── Confirm ──
             if (!options.yes) {
                 const ok = await confirm({
-                    message: `Apply to ${st.finalName}?`,
+                    message: `  Apply to ${st.finalName}?`,
                     default: true,
                 });
                 if (!ok) {
@@ -346,11 +388,11 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                 if (keys.length === 0) continue;
 
                 try {
-                    if (st.pkColumns.length > 0) {
+                    if (st.matchColumns.length > 0) {
                         const cols = keys.map(k => `"${k}"`).join(', ');
                         const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-                        const conflictCols = st.pkColumns.map(k => `"${k}"`).join(', ');
-                        const updateCols = keys.filter(k => !st.pkColumns.includes(k));
+                        const conflictCols = st.matchColumns.map(k => `"${k}"`).join(', ');
+                        const updateCols = keys.filter(k => !st.matchColumns.includes(k));
 
                         let sql: string;
                         if (updateCols.length > 0) {
