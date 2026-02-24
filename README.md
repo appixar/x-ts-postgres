@@ -79,9 +79,15 @@ POSTGRES:
       Type: timestamp
       Default: now()
     "pid":
-      Type: varchar(12)
+      Type: varchar(16)
       Key: UNI
-      Default: '"left"(md5((random())::text), 12)'
+      Default: encode(gen_random_bytes(8), 'hex')
+    "pid32":
+      Type: varchar(32)
+      Key: UNI
+      Default: encode(gen_random_bytes(16), 'hex')
+    "decimal":
+      Type: numeric
 ```
 
 ### 3. Define Tables
@@ -131,7 +137,9 @@ Use any PostgreSQL type directly or a custom field alias:
 | `date`    | `TIMESTAMP`               | Timestamp                 |
 | `email`   | `VARCHAR(128)`            | Semantic alias            |
 | `now`     | `TIMESTAMP DEFAULT now()` | Auto-timestamp            |
-| `pid`     | `VARCHAR(12) UNIQUE`      | Random public ID          |
+| `pid`     | `VARCHAR(16) UNIQUE`      | Random 16-char hex ID     |
+| `pid32`   | `VARCHAR(32) UNIQUE`      | Random 32-char hex ID     |
+| `decimal` | `NUMERIC`                 | Arbitrary precision       |
 
 You can also use raw PostgreSQL types: `varchar(255)`, `boolean`, `jsonb`, `uuid`, `numeric(16,8)`, etc.
 
@@ -227,6 +235,9 @@ npx xpg diff
 
 # Preview changes (table view)
 npx xpg diff --display table
+
+# Show migration status per table (no changes applied)
+npx xpg status
 
 # Dry run — show generated SQL without executing
 npx xpg up --dry
@@ -329,6 +340,14 @@ Import **xpg** as a library in your Node.js / Next.js project:
 ### Database — Query & Connection
 
 ```typescript
+import xpg from "@appixar/xpg";
+
+const db = xpg.connect("main");
+```
+
+Or, if you need more control:
+
+```typescript
 import { Database, loadConfig } from "@appixar/xpg";
 
 const config = loadConfig();
@@ -340,11 +359,12 @@ const users = await db.query(
   { status: "active" },
 );
 
-// INSERT — returns last insert id
-const id = await db.insert("app_users", {
+// INSERT — returns the full inserted row
+const row = await db.insert("app_users", {
   user_name: "John",
   user_email: "john@example.com",
 });
+console.log(row?.user_id); // access any column
 
 // UPDATE — returns affected row count
 const affected = await db.update(
@@ -366,9 +386,30 @@ const recent = await db.findMany(
   { orderBy: "user_date_insert DESC", limit: 10 },
 );
 
+// COUNT — returns number of matching rows
+const total = await db.count("app_users", { user_status: "active" });
+
+// EXISTS — returns true/false
+const emailTaken = await db.exists("app_users", { user_email: "john@example.com" });
+
 // Close all pools when done
 await Database.closeAll();
+// Or via shorthand: await xpg.closeAll();
 ```
+
+### Query Logging
+
+Enable query logging to see all executed SQL with execution time:
+
+```typescript
+const db = xpg.connect("main", { log: true });
+
+await db.query("SELECT * FROM app_users");
+// Console output:
+// [xpg] 2ms  SELECT * FROM app_users
+```
+
+Queries are color-coded by speed: dim (fast), yellow (>30ms), red (>100ms).
 
 ### Named Parameters
 
@@ -415,7 +456,8 @@ const orderId = await db.transaction(async (client) => {
 Force all queries to primary when you need strong consistency:
 
 ```typescript
-const db = new Database(cluster, "main", { primary: true });
+const db = xpg.connect("main", { primary: true });
+// Or: const db = new Database(cluster, "main", { primary: true });
 ```
 
 ### Run Migrations Programmatically

@@ -10,11 +10,13 @@ import type { DbNodeConfig } from './types.js';
 
 const { Pool } = pg;
 
-interface DatabaseOptions {
+export interface DatabaseOptions {
     /** Cluster name (key in POSTGRES.DB config) */
     cluster?: string;
     /** Force primary (write) node */
     primary?: boolean;
+    /** Log queries with execution time to console */
+    log?: boolean;
 }
 
 /**
@@ -119,6 +121,7 @@ export class Database {
     private writeNode: DbNodeConfig;
     private readNodes: DbNodeConfig[];
     private forcePrimary: boolean;
+    private logQueries: boolean;
     public error: string | null = null;
 
     constructor(
@@ -128,9 +131,18 @@ export class Database {
     ) {
         this.clusterName = clusterName;
         this.forcePrimary = options.primary ?? false;
+        this.logQueries = options.log ?? false;
         const { writeNode, readNodes } = resolveCluster(clusterConf);
         this.writeNode = writeNode;
         this.readNodes = readNodes;
+    }
+
+    private logQuery(sql: string, ms: number): void {
+        if (!this.logQueries) return;
+        const time = ms < 1 ? `${ms.toFixed(1)}ms` : `${Math.round(ms)}ms`;
+        const color = ms > 100 ? '\x1b[31m' : ms > 30 ? '\x1b[33m' : '\x1b[2m';
+        const reset = '\x1b[0m';
+        console.log(`${color}[xpg] ${time}${reset}  ${sql.replace(/\s+/g, ' ').trim().substring(0, 120)}`);
     }
 
     private getWritePool(): pg.Pool {
@@ -204,7 +216,9 @@ export class Database {
                 });
             }
 
+            const start = performance.now();
             const result = await pool.query(pgSql, values.length > 0 ? values : undefined);
+            this.logQuery(pgSql, performance.now() - start);
             return result.rows as T[];
         } catch (err) {
             this.error = (err as Error).message;
@@ -213,16 +227,16 @@ export class Database {
     }
 
     /**
-     * Insert a row into a table. Returns the last insert id (if available).
+     * Insert a row into a table. Returns the full inserted row.
      */
-    async insert(table: string, data: Record<string, unknown>): Promise<string | null> {
+    async insert<T extends Record<string, unknown> = Record<string, unknown>>(table: string, data: Record<string, unknown>): Promise<T | null> {
         const pool = this.getWritePool();
         const keys = Object.keys(data);
         const cols = keys.map(k => `"${k}"`).join(', ');
         const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
         const values = keys.map(k => {
             const v = data[k];
-            if (v === 'NULL' || v === 'null' || v === '') return null;
+            if (v === 'NULL' || v === 'null') return null;
             return v;
         });
 
@@ -230,7 +244,7 @@ export class Database {
 
         try {
             const result = await pool.query(sql, values);
-            return result.rows[0]?.id ?? null;
+            return (result.rows[0] as T) ?? null;
         } catch (err) {
             this.error = (err as Error).message;
             throw err;
@@ -443,6 +457,71 @@ export class Database {
             throw err;
         } finally {
             raw.release();
+        }
+    }
+
+    /**
+     * Count rows in a table matching an optional condition.
+     *
+     * @example
+     * ```ts
+     * const total = await db.count('app_users', { user_status: 'active' });
+     * ```
+     */
+    async count(table: string, condition?: Record<string, unknown>): Promise<number> {
+        const vals: unknown[] = [];
+        let sql = `SELECT COUNT(*) AS count FROM "${table}"`;
+
+        if (condition && Object.keys(condition).length > 0) {
+            let idx = 0;
+            const parts = Object.entries(condition).map(([k, v]) => {
+                if (v === null || v === 'NULL') return `"${k}" IS NULL`;
+                idx++;
+                vals.push(v);
+                return `"${k}" = $${idx}`;
+            });
+            sql += ` WHERE ${parts.join(' AND ')}`;
+        }
+
+        try {
+            const start = performance.now();
+            const result = await this.getReadPool().query(sql, vals.length > 0 ? vals : undefined);
+            this.logQuery(sql, performance.now() - start);
+            return parseInt(result.rows[0]?.count ?? '0', 10);
+        } catch (err) {
+            this.error = (err as Error).message;
+            throw err;
+        }
+    }
+
+    /**
+     * Check if a row exists matching a condition.
+     *
+     * @example
+     * ```ts
+     * const emailTaken = await db.exists('app_users', { user_email: 'john@test.com' });
+     * ```
+     */
+    async exists(table: string, condition: Record<string, unknown>): Promise<boolean> {
+        const vals: unknown[] = [];
+        let idx = 0;
+        const parts = Object.entries(condition).map(([k, v]) => {
+            if (v === null || v === 'NULL') return `"${k}" IS NULL`;
+            idx++;
+            vals.push(v);
+            return `"${k}" = $${idx}`;
+        });
+
+        const sql = `SELECT 1 FROM "${table}" WHERE ${parts.join(' AND ')} LIMIT 1`;
+
+        try {
+            const start = performance.now();
+            const result = await this.getReadPool().query(sql, vals.length > 0 ? vals : undefined);
+            this.logQuery(sql, performance.now() - start);
+            return result.rows.length > 0;
+        } catch (err) {
+            this.error = (err as Error).message;
+            throw err;
         }
     }
 

@@ -8,6 +8,20 @@ import chalk from 'chalk';
 import boxen from 'boxen';
 import ora, { type Ora } from 'ora';
 import type { LogColor } from './types.js';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function getVersion(): string {
+    try {
+        const pkg = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf-8'));
+        return pkg.version ?? '0.0.0';
+    } catch {
+        return '0.0.0';
+    }
+}
 
 let activeSpinner: Ora | null = null;
 
@@ -65,9 +79,20 @@ export function fail(text: string): void {
 }
 
 export function welcome(): void {
-    if (isColorDisabled()) return;
+    if (isColorDisabled()) {
+        console.log(`xpg v${getVersion()}`);
+        return;
+    }
+    console.log(chalk.cyan('⚡') + ' ' + chalk.bold('xpg') + ' ' + chalk.dim(`v${getVersion()}`));
+}
 
-    console.log(boxen(chalk.bold.cyan('x-postgres') + '\n' + chalk.dim('Schema Management & Migrations'), {
+export function banner(): void {
+    if (isColorDisabled()) {
+        welcome();
+        return;
+    }
+    const v = getVersion();
+    console.log(boxen(chalk.bold.cyan('x-postgres') + ' ' + chalk.dim(`v${v}`) + '\n' + chalk.dim('Schema Management & Migrations'), {
         padding: 1,
         margin: 1,
         borderStyle: 'round',

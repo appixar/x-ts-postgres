@@ -15,7 +15,7 @@ import { loadConfig, resolveSchemaPath, type LoadedConfig } from './configLoader
 import { parseSchema } from './schemaParser.js';
 import { generateCreateTable, generateDropTable, generateCreateDatabase } from './sqlGenerator.js';
 import { generateUpdateTable, type DiffContext } from './diffEngine.js';
-import { Database } from './pgService.js';
+import { Database } from './database.js';
 import * as log from './logger.js';
 import type { QueuedQuery, DbColumnInfo, DbNodeConfig } from './types.js';
 

@@ -35,6 +35,7 @@ const AUTO_DEFAULT_PATTERNS = [
     /^current_timestamp/i,
     /^gen_random_uuid\(\)/i,
     /^uuid_generate/i,
+    /^encode\(/i,
 ];
 
 function isAutoColumn(columnDefault: string | null, dataType: string): boolean {
