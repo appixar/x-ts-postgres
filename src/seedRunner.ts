@@ -228,40 +228,38 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                 const sampleRow = rows.find(r => typeof r === 'object' && r !== null) as Record<string, unknown> | undefined;
                 const seedKeys = sampleRow ? Object.keys(sampleRow) : [];
 
-                // Determine match columns: use PK if all PK cols are in seed data,
-                // otherwise fall back to UNIQUE columns present in seed data
+                // Determine match columns: PK if in seed data, else UNIQUE columns
                 let matchColumns = pkCols.filter(k => seedKeys.includes(k));
 
-                if (matchColumns.length === 0 || matchColumns.length < pkCols.length) {
-                    // PK not fully in seed data — look for UNIQUE indexes
+                if (matchColumns.length < pkCols.length) {
+                    // PK not in seed data — find UNIQUE index columns via pg_indexes
                     try {
-                        const uniResult = await pg.query<{ column_name: string; index_name: string }>(
-                            `SELECT i.relname AS index_name, a.attname AS column_name
-                             FROM pg_index ix
-                             JOIN pg_class t ON t.oid = ix.indrelid
-                             JOIN pg_class i ON i.oid = ix.indexrelid
-                             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
-                             WHERE t.relname = :tbl
-                               AND ix.indisunique = true
-                               AND ix.indisprimary = false
-                             ORDER BY i.relname, a.attnum`,
-                            { tbl: finalTableName }
+                        const idxRows = await pg.query<{ indexdef: string }>(
+                            `SELECT indexdef FROM pg_indexes WHERE tablename = $1 AND schemaname = 'public'`,
+                            [finalTableName]
                         );
 
-                        // Group by index — pick the first where ALL columns are in seed data
-                        const byIndex = new Map<string, string[]>();
-                        for (const r of uniResult) {
-                            if (!byIndex.has(r.index_name)) byIndex.set(r.index_name, []);
-                            byIndex.get(r.index_name)!.push(r.column_name);
-                        }
+                        for (const row of idxRows) {
+                            const def = row.indexdef;
+                            if (!def.includes('UNIQUE')) continue;
 
-                        for (const cols of byIndex.values()) {
+                            // Extract columns from "... (col1, col2)" 
+                            const match = def.match(/\(([^)]+)\)/);
+                            if (!match) continue;
+
+                            const cols = match[1].split(',').map(c => c.trim().replace(/"/g, ''));
                             if (cols.every(c => seedKeys.includes(c))) {
                                 matchColumns = cols;
                                 break;
                             }
                         }
-                    } catch { /* ignore */ }
+                    } catch (err) {
+                        log.warn(`${finalTableName}: ${(err as Error).message}`);
+                    }
+                }
+
+                if (matchColumns.length === 0) {
+                    log.warn(`${finalTableName}: no matchable UNIQUE columns in seed — will insert`);
                 }
 
                 seedTables.push({
