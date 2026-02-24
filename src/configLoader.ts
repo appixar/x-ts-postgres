@@ -200,6 +200,8 @@ export interface LoadedConfig {
   seedSuffix: string;
   /** Display mode for CLI output: 'table' or 'compact' */
   displayMode: "table" | "compact";
+  /** Connection timeout in milliseconds (configured in seconds via TIMEOUT) */
+  timeoutMs: number;
 }
 
 /**
@@ -281,6 +283,10 @@ export function loadConfig(configPath?: string): LoadedConfig {
   const displayMode =
     displayModeRaw === "compact" ? "compact" : ("table" as const);
 
+  // Connection timeout (seconds → ms)
+  const timeoutSec = Number((raw.POSTGRES as any)?.TIMEOUT) || 10;
+  const timeoutMs = timeoutSec * 1000;
+
   return {
     postgres,
     customFields,
@@ -288,6 +294,7 @@ export function loadConfig(configPath?: string): LoadedConfig {
     seedPath,
     seedSuffix,
     displayMode,
+    timeoutMs,
   };
 }
 

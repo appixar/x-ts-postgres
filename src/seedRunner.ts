@@ -233,28 +233,29 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
                 let matchColumns = pkCols.filter(k => seedKeys.includes(k));
 
                 if (matchColumns.length === 0 || matchColumns.length < pkCols.length) {
-                    // PK not fully in seed data — look for UNIQUE constraints
+                    // PK not fully in seed data — look for UNIQUE indexes
                     try {
-                        const uniResult = await pg.query<{ column_name: string; constraint_name: string }>(
-                            `SELECT kcu.column_name, kcu.constraint_name
-                             FROM pg_constraint con
-                             JOIN information_schema.key_column_usage kcu
-                               ON con.conname = kcu.constraint_name
-                              AND kcu.table_schema = 'public'
-                             WHERE con.conrelid = :tbl::regclass
-                               AND con.contype = 'u'
-                             ORDER BY kcu.constraint_name, kcu.ordinal_position`,
+                        const uniResult = await pg.query<{ column_name: string; index_name: string }>(
+                            `SELECT i.relname AS index_name, a.attname AS column_name
+                             FROM pg_index ix
+                             JOIN pg_class t ON t.oid = ix.indrelid
+                             JOIN pg_class i ON i.oid = ix.indexrelid
+                             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+                             WHERE t.relname = :tbl
+                               AND ix.indisunique = true
+                               AND ix.indisprimary = false
+                             ORDER BY i.relname, a.attnum`,
                             { tbl: finalTableName }
                         );
 
-                        // Group by constraint — pick the first constraint where ALL columns are in seed data
-                        const byConstraint = new Map<string, string[]>();
+                        // Group by index — pick the first where ALL columns are in seed data
+                        const byIndex = new Map<string, string[]>();
                         for (const r of uniResult) {
-                            if (!byConstraint.has(r.constraint_name)) byConstraint.set(r.constraint_name, []);
-                            byConstraint.get(r.constraint_name)!.push(r.column_name);
+                            if (!byIndex.has(r.index_name)) byIndex.set(r.index_name, []);
+                            byIndex.get(r.index_name)!.push(r.column_name);
                         }
 
-                        for (const cols of byConstraint.values()) {
+                        for (const cols of byIndex.values()) {
                             if (cols.every(c => seedKeys.includes(c))) {
                                 matchColumns = cols;
                                 break;
@@ -367,8 +368,9 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
             // ── Confirm ──
             if (!options.yes) {
                 const ok = await confirm({
-                    message: `  Apply to ${st.finalName}?`,
+                    message: `Apply to ${st.finalName}?`,
                     default: true,
+                    theme: { prefix: '   ' },
                 });
                 if (!ok) {
                     console.log(`  ${chalk.dim('○ skipped')}`);

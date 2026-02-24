@@ -67,7 +67,7 @@ export class SchemaEngine {
                 if (filter.name !== writeNode.NAME && !writeNode.TENANT_KEYS) continue;
             }
 
-            const pg = new Database(dbConf, dbId);
+            const pg = new Database(dbConf, dbId, { timeoutMs: this.config.timeoutMs });
             yield { id: dbId, config: writeNode, pg };
         }
     }

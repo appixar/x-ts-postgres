@@ -167,8 +167,9 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
             // Prompt for confirmation unless --all
             if (!options.all) {
                 const ok = await confirm({
-                    message: `  Dump ${table}?`,
+                    message: `Dump ${table}?`,
                     default: true,
+                    theme: { prefix: '   ' },
                 });
                 if (!ok) {
                     console.log(`  ${chalk.dim(connector)} ${chalk.dim('○')} ${chalk.dim(table)} ${chalk.dim('skipped')}`);

@@ -55,6 +55,8 @@ POSTGRES:
       PATH: [database] # Directories containing .yml schema files
       POOL_MAX: 10 # Max connections per pool (optional, default: 10)
 
+  TIMEOUT: 10 # Connection timeout in seconds (optional, default: 10)
+
   # SEED_PATH: seeds      # Path to seed files (default: seeds)
   # SEED_SUFFIX: ".seed"  # Suffix for seed:dump filenames (e.g. table.seed.yml)
   # DISPLAY_MODE: table   # Display mode: compact (default) | table

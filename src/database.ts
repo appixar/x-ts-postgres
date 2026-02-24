@@ -17,6 +17,8 @@ export interface DatabaseOptions {
     primary?: boolean;
     /** Log queries with execution time to console */
     log?: boolean;
+    /** Connection timeout in milliseconds */
+    timeoutMs?: number;
 }
 
 /**
@@ -85,7 +87,7 @@ function poolKey(node: DbNodeConfig, dbOverride?: string): string {
  * Pools are keyed by connection details — if write and read point
  * to the same host+port+database, they share the same pool.
  */
-function getPool(node: DbNodeConfig, dbOverride?: string): pg.Pool {
+function getPool(node: DbNodeConfig, dbOverride?: string, timeoutMs?: number): pg.Pool {
     const key = poolKey(node, dbOverride);
     if (poolRegistry.has(key)) return poolRegistry.get(key)!;
 
@@ -99,6 +101,7 @@ function getPool(node: DbNodeConfig, dbOverride?: string): pg.Pool {
         password: node.PASS,
         max: node.POOL_MAX ?? 10,
         idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: timeoutMs ?? 10000,
     });
 
     pool.on('error', (err) => {
@@ -122,6 +125,7 @@ export class Database {
     private readNodes: DbNodeConfig[];
     private forcePrimary: boolean;
     private logQueries: boolean;
+    private timeoutMs: number;
     public error: string | null = null;
 
     constructor(
@@ -132,6 +136,7 @@ export class Database {
         this.clusterName = clusterName;
         this.forcePrimary = options.primary ?? false;
         this.logQueries = options.log ?? false;
+        this.timeoutMs = options.timeoutMs ?? 10000;
         const { writeNode, readNodes } = resolveCluster(clusterConf);
         this.writeNode = writeNode;
         this.readNodes = readNodes;
@@ -146,14 +151,14 @@ export class Database {
     }
 
     private getWritePool(): pg.Pool {
-        return getPool(this.writeNode);
+        return getPool(this.writeNode, undefined, this.timeoutMs);
     }
 
     private getReadPool(): pg.Pool {
         if (this.forcePrimary) return this.getWritePool();
         // Random read replica selection
         const idx = Math.floor(Math.random() * this.readNodes.length);
-        return getPool(this.readNodes[idx]);
+        return getPool(this.readNodes[idx], undefined, this.timeoutMs);
     }
 
     /**

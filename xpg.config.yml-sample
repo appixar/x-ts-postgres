@@ -20,6 +20,9 @@ POSTGRES:
       # If 10 = ~2k lightwave queries(10ms each) per second.
       POOL_MAX: 10
 
+  # Connection timeout in seconds (default: 10)
+  TIMEOUT: 5
+
   # Path to seed files (relative to config dir, default: seeds)
   SEED_PATH: src/database/seeds
 
