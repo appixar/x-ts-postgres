@@ -14,6 +14,11 @@ POSTGRES:
       PORT: <ENV.DB_PORT>
       PREF: app_
       PATH: [src/database]
+      # Max connections per pool (optional, default: 10)
+      # All projects that use the same DB, together, cannot exceed max_connection of the postgres server configuration.
+      # Example: API: POOL_MAX=30, Worker 1: POOL_MAX=10. Together: 40 connections.
+      # If 10 = ~2k lightwave queries(10ms each) per second.
+      POOL_MAX: 10
 
   # Path to seed files (relative to config dir, default: seeds)
   SEED_PATH: src/database/seeds

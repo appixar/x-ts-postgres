@@ -68,9 +68,23 @@ function resolveCluster(
 }
 
 /**
- * Get or create a connection pool for a specific node.
+ * Derive a unique pool key from the actual connection details.
+ * Same host+port+database+user = same pool, regardless of role.
  */
-function getPool(node: DbNodeConfig, key: string): pg.Pool {
+function poolKey(node: DbNodeConfig, dbOverride?: string): string {
+    const host = Array.isArray(node.HOST) ? node.HOST[0] : node.HOST;
+    const port = typeof node.PORT === 'string' ? parseInt(node.PORT, 10) : node.PORT;
+    const db = dbOverride ?? node.NAME;
+    return `${node.USER}@${host}:${port}/${db}`;
+}
+
+/**
+ * Get or create a connection pool for a specific node.
+ * Pools are keyed by connection details — if write and read point
+ * to the same host+port+database, they share the same pool.
+ */
+function getPool(node: DbNodeConfig, dbOverride?: string): pg.Pool {
+    const key = poolKey(node, dbOverride);
     if (poolRegistry.has(key)) return poolRegistry.get(key)!;
 
     const host = Array.isArray(node.HOST) ? node.HOST[0] : node.HOST;
@@ -78,10 +92,10 @@ function getPool(node: DbNodeConfig, key: string): pg.Pool {
     const pool = new Pool({
         host,
         port: typeof node.PORT === 'string' ? parseInt(node.PORT, 10) : node.PORT,
-        database: node.NAME,
+        database: dbOverride ?? node.NAME,
         user: node.USER,
         password: node.PASS,
-        max: 10,
+        max: node.POOL_MAX ?? 10,
         idleTimeoutMillis: 30000,
     });
 
@@ -120,14 +134,14 @@ export class Database {
     }
 
     private getWritePool(): pg.Pool {
-        return getPool(this.writeNode, `${this.clusterName}:write`);
+        return getPool(this.writeNode);
     }
 
     private getReadPool(): pg.Pool {
         if (this.forcePrimary) return this.getWritePool();
         // Random read replica selection
         const idx = Math.floor(Math.random() * this.readNodes.length);
-        return getPool(this.readNodes[idx], `${this.clusterName}:read:${idx}`);
+        return getPool(this.readNodes[idx]);
     }
 
     /**

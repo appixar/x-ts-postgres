@@ -51,8 +51,9 @@ POSTGRES:
       USER: <ENV.DB_USER>
       PASS: <ENV.DB_PASS>
       PORT: <ENV.DB_PORT>
-      PREF: app_          # Table prefix (optional)
-      PATH: [database]    # Directories containing .yml schema files
+      PREF: app_ # Table prefix (optional)
+      PATH: [database] # Directories containing .yml schema files
+      POOL_MAX: 10 # Max connections per pool (optional, default: 10)
 
   # SEED_PATH: seeds      # Path to seed files (default: seeds)
   # SEED_SUFFIX: ".seed"  # Suffix for seed:dump filenames (e.g. table.seed.yml)
@@ -119,31 +120,31 @@ Each field is defined as `field_name: type [modifiers...]`
 
 Use any PostgreSQL type directly or a custom field alias:
 
-| Alias | Resolves to | Notes |
-|-------|-------------|-------|
-| `id` | `SERIAL PRIMARY KEY` | Auto-increment, not null |
-| `str` | `VARCHAR(64)` | Default string |
-| `str/128` | `VARCHAR(128)` | Override length with `/N` |
-| `text` | `TEXT` | Unlimited text |
-| `int` | `INTEGER` | Integer |
-| `float` | `REAL` | Float |
-| `date` | `TIMESTAMP` | Timestamp |
-| `email` | `VARCHAR(128)` | Semantic alias |
-| `now` | `TIMESTAMP DEFAULT now()` | Auto-timestamp |
-| `pid` | `VARCHAR(12) UNIQUE` | Random public ID |
+| Alias     | Resolves to               | Notes                     |
+| --------- | ------------------------- | ------------------------- |
+| `id`      | `SERIAL PRIMARY KEY`      | Auto-increment, not null  |
+| `str`     | `VARCHAR(64)`             | Default string            |
+| `str/128` | `VARCHAR(128)`            | Override length with `/N` |
+| `text`    | `TEXT`                    | Unlimited text            |
+| `int`     | `INTEGER`                 | Integer                   |
+| `float`   | `REAL`                    | Float                     |
+| `date`    | `TIMESTAMP`               | Timestamp                 |
+| `email`   | `VARCHAR(128)`            | Semantic alias            |
+| `now`     | `TIMESTAMP DEFAULT now()` | Auto-timestamp            |
+| `pid`     | `VARCHAR(12) UNIQUE`      | Random public ID          |
 
 You can also use raw PostgreSQL types: `varchar(255)`, `boolean`, `jsonb`, `uuid`, `numeric(16,8)`, etc.
 
 ### Modifiers
 
-| Modifier | Description | Example |
-|----------|-------------|---------|
-| `required` | `NOT NULL` constraint | `user_name: str required` |
-| `unique` | `UNIQUE` constraint | `user_email: email unique` |
-| `unique/group` | Composite unique index | `ticker: str unique/pair` |
-| `index` | Individual index | `user_status: str index` |
-| `index/group` | Composite index | `created_at: date index/range` |
-| `default/value` | Default value | `status: str default/active` |
+| Modifier        | Description            | Example                        |
+| --------------- | ---------------------- | ------------------------------ |
+| `required`      | `NOT NULL` constraint  | `user_name: str required`      |
+| `unique`        | `UNIQUE` constraint    | `user_email: email unique`     |
+| `unique/group`  | Composite unique index | `ticker: str unique/pair`      |
+| `index`         | Individual index       | `user_status: str index`       |
+| `index/group`   | Composite index        | `created_at: date index/range` |
+| `default/value` | Default value          | `status: str default/active`   |
 
 > **Note:** Fields without `required` default to `NULL`.
 
@@ -161,6 +162,7 @@ stock_prices:
 ```
 
 This generates:
+
 - `CREATE UNIQUE INDEX "stock_prices_ticker_ex_unique_idx" ON "stock_prices" ("ticker", "exchange")`
 - `CREATE INDEX "stock_prices_lookup_idx" ON "stock_prices" ("ticker", "exchange")`
 
@@ -188,34 +190,34 @@ npx xpg <command> [options]
 
 ### Commands
 
-| Command | Description |
-|---------|-------------|
-| `xpg up` | Run database migrations |
-| `xpg diff` | Show schema differences without executing |
-| `xpg query <sql>` | Execute a raw SQL query |
-| `xpg seed [file]` | Populate database with seed data |
-| `xpg seed:dump` | Generate YAML seed files from live database |
-| `xpg init` | Generate sample config files |
+| Command           | Description                                 |
+| ----------------- | ------------------------------------------- |
+| `xpg up`          | Run database migrations                     |
+| `xpg diff`        | Show schema differences without executing   |
+| `xpg query <sql>` | Execute a raw SQL query                     |
+| `xpg seed [file]` | Populate database with seed data            |
+| `xpg seed:dump`   | Generate YAML seed files from live database |
+| `xpg init`        | Generate sample config files                |
 
 ### Options
 
-| Flag | Commands | Description |
-|------|----------|-------------|
-| `--create` | `up` | Create the database if it doesn't exist |
-| `--dry` | `up` | Preview SQL queries without executing |
-| `--mute` | `up` | Suppress all output |
-| `--drop-orphans` | `up` `diff` | Include `DROP TABLE` for tables not in YAML |
-| `--display <mode>` | `up` `diff` | Output format: `compact` (default) or `table` |
-| `--name <db>` | `up` `diff` `query` | Target a specific database cluster |
-| `--tenant <key>` | `up` `diff` `query` | Target a specific tenant |
-| `--yes` | `seed` | Skip per-table confirmation prompts |
-| `--table <list>` | `seed` `seed:dump` | Comma-separated list of tables to seed/dump |
-| `--exclude <list>` | `seed:dump` | Comma-separated list of tables to exclude |
-| `--all` | `seed:dump` | Dump all tables without prompting |
-| `--limit <n>` | `seed:dump` | Max rows per table |
-| `--skip-auto` | `seed:dump` | Exclude auto-generated columns (SERIAL, now(), uuid) |
-| `--config <path>` | all | Path to a custom config file |
-| `--no-color` | all | Disable colored terminal output |
+| Flag               | Commands            | Description                                          |
+| ------------------ | ------------------- | ---------------------------------------------------- |
+| `--create`         | `up`                | Create the database if it doesn't exist              |
+| `--dry`            | `up`                | Preview SQL queries without executing                |
+| `--mute`           | `up`                | Suppress all output                                  |
+| `--drop-orphans`   | `up` `diff`         | Include `DROP TABLE` for tables not in YAML          |
+| `--display <mode>` | `up` `diff`         | Output format: `compact` (default) or `table`        |
+| `--name <db>`      | `up` `diff` `query` | Target a specific database cluster                   |
+| `--tenant <key>`   | `up` `diff` `query` | Target a specific tenant                             |
+| `--yes`            | `seed`              | Skip per-table confirmation prompts                  |
+| `--table <list>`   | `seed` `seed:dump`  | Comma-separated list of tables to seed/dump          |
+| `--exclude <list>` | `seed:dump`         | Comma-separated list of tables to exclude            |
+| `--all`            | `seed:dump`         | Dump all tables without prompting                    |
+| `--limit <n>`      | `seed:dump`         | Max rows per table                                   |
+| `--skip-auto`      | `seed:dump`         | Exclude auto-generated columns (SERIAL, now(), uuid) |
+| `--config <path>`  | all                 | Path to a custom config file                         |
+| `--no-color`       | all                 | Disable colored terminal output                      |
 
 ### Examples
 
@@ -313,7 +315,7 @@ By default, dumped files are named `<table>.yml`. You can configure a suffix so 
 
 ```yaml
 POSTGRES:
-  SEED_SUFFIX: ".seed"   # → app_users.seed.yml, app_config.seed.yml
+  SEED_SUFFIX: ".seed" # → app_users.seed.yml, app_config.seed.yml
 ```
 
 The suffix only affects **new** files created by `seed:dump`. If an existing file already contains the table's data, it is updated regardless of its filename. The `seed` command reads all `.yml`/`.yaml` files in `SEED_PATH`, so suffixed files are picked up automatically.
@@ -327,39 +329,41 @@ Import **xpg** as a library in your Node.js / Next.js project:
 ### Database — Query & Connection
 
 ```typescript
-import { Database, loadConfig } from '@appixar/xpg';
+import { Database, loadConfig } from "@appixar/xpg";
 
 const config = loadConfig();
-const db = new Database(config.postgres.DB['main'], 'main');
+const db = new Database(config.postgres.DB["main"], "main");
 
 // SELECT — auto-routed to read replica
 const users = await db.query(
-  'SELECT * FROM app_users WHERE user_status = :status',
-  { status: 'active' }
+  "SELECT * FROM app_users WHERE user_status = :status",
+  { status: "active" },
 );
 
 // INSERT — returns last insert id
-const id = await db.insert('app_users', {
-  user_name: 'John',
-  user_email: 'john@example.com',
+const id = await db.insert("app_users", {
+  user_name: "John",
+  user_email: "john@example.com",
 });
 
 // UPDATE — returns affected row count
-const affected = await db.update('app_users',
-  { user_status: 'inactive' },
-  { user_id: 1 }
+const affected = await db.update(
+  "app_users",
+  { user_status: "inactive" },
+  { user_id: 1 },
 );
 
 // DELETE — returns affected row count
-const deleted = await db.delete('app_users', { user_id: 1 });
+const deleted = await db.delete("app_users", { user_id: 1 });
 
 // FIND ONE — returns single row or null
-const user = await db.findOne('app_users', { user_email: 'john@example.com' });
+const user = await db.findOne("app_users", { user_email: "john@example.com" });
 
 // FIND MANY — with options
-const recent = await db.findMany('app_users',
-  { user_status: 'active' },
-  { orderBy: 'user_date_insert DESC', limit: 10 }
+const recent = await db.findMany(
+  "app_users",
+  { user_status: "active" },
+  { orderBy: "user_date_insert DESC", limit: 10 },
 );
 
 // Close all pools when done
@@ -372,8 +376,8 @@ Use `:paramName` syntax for safe, parameterized queries. Converted to `$1, $2...
 
 ```typescript
 const rows = await db.query(
-  'SELECT * FROM products WHERE price > :min AND category = :cat',
-  { min: 100, cat: 'electronics' }
+  "SELECT * FROM products WHERE price > :min AND category = :cat",
+  { min: 100, cat: "electronics" },
 );
 ```
 
@@ -384,13 +388,13 @@ All queries inside a transaction share the same connection, ensuring atomicity:
 ```typescript
 const orderId = await db.transaction(async (client) => {
   const [order] = await client.queryWith<{ id: number }>(
-    'INSERT INTO orders (user_id) VALUES (:userId) RETURNING id',
-    { userId: 42 }
+    "INSERT INTO orders (user_id) VALUES (:userId) RETURNING id",
+    { userId: 42 },
   );
 
   await client.queryWith(
-    'INSERT INTO order_items (order_id, product_id, qty) VALUES (:orderId, :productId, :qty)',
-    { orderId: order.id, productId: 7, qty: 3 }
+    "INSERT INTO order_items (order_id, product_id, qty) VALUES (:orderId, :productId, :qty)",
+    { orderId: order.id, productId: 7, qty: 3 },
   );
 
   return order.id;
@@ -411,13 +415,13 @@ const orderId = await db.transaction(async (client) => {
 Force all queries to primary when you need strong consistency:
 
 ```typescript
-const db = new Database(cluster, 'main', { primary: true });
+const db = new Database(cluster, "main", { primary: true });
 ```
 
 ### Run Migrations Programmatically
 
 ```typescript
-import { up } from '@appixar/xpg';
+import { up } from "@appixar/xpg";
 
 const result = await up({
   create: true,
@@ -445,12 +449,14 @@ POSTGRES:
         PORT: 5432
         PREF: app_
         PATH: [database]
+        POOL_MAX: 10
       - TYPE: read
         NAME: my_database
         HOST: replica.db.example.com
         USER: reader
         PASS: <ENV.DB_READ_PASS>
         PORT: 5432
+        POOL_MAX: 10
 ```
 
 ---
