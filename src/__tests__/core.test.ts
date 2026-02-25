@@ -279,4 +279,41 @@ describe('typeDictionary', () => {
     it('maps TEXT to text', () => {
         assert.equal(POSTGRES_TYPE_DICTIONARY['TEXT'], 'text');
     });
+
+    it('maps all integer aliases correctly', () => {
+        assert.equal(POSTGRES_TYPE_DICTIONARY['INT2'], 'smallint');
+        assert.equal(POSTGRES_TYPE_DICTIONARY['INT4'], 'integer');
+        assert.equal(POSTGRES_TYPE_DICTIONARY['INT8'], 'bigint');
+    });
+
+    it('maps all float aliases correctly', () => {
+        assert.equal(POSTGRES_TYPE_DICTIONARY['FLOAT'], 'double precision');
+        assert.equal(POSTGRES_TYPE_DICTIONARY['FLOAT4'], 'real');
+        assert.equal(POSTGRES_TYPE_DICTIONARY['FLOAT8'], 'double precision');
+    });
+
+    it('maps BOOL to boolean', () => {
+        assert.equal(POSTGRES_TYPE_DICTIONARY['BOOL'], 'boolean');
+    });
+
+    it('maps CHAR to character', () => {
+        assert.equal(POSTGRES_TYPE_DICTIONARY['CHAR'], 'character');
+    });
+
+    it('maps TIMESTAMPTZ and TIMETZ correctly', () => {
+        assert.equal(POSTGRES_TYPE_DICTIONARY['TIMESTAMPTZ'], 'timestamp with time zone');
+        assert.equal(POSTGRES_TYPE_DICTIONARY['TIMETZ'], 'time with time zone');
+    });
+
+    it('maps serial variant aliases correctly', () => {
+        assert.equal(POSTGRES_TYPE_DICTIONARY['SMALLSERIAL'], 'smallint');
+        assert.equal(POSTGRES_TYPE_DICTIONARY['BIGSERIAL'], 'bigint');
+        assert.equal(POSTGRES_TYPE_DICTIONARY['SERIAL2'], 'smallint');
+        assert.equal(POSTGRES_TYPE_DICTIONARY['SERIAL4'], 'integer');
+        assert.equal(POSTGRES_TYPE_DICTIONARY['SERIAL8'], 'bigint');
+    });
+
+    it('maps VARBIT to bit varying', () => {
+        assert.equal(POSTGRES_TYPE_DICTIONARY['VARBIT'], 'bit varying');
+    });
 });
