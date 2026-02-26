@@ -94,8 +94,8 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
 
         const multiCluster = engine.getTargetCount() > 1;
         const label = multiCluster
-            ? `${id} 🛢 ${config.NAME}`
-            : `🛢 ${config.NAME}`;
+            ? `${id} ⬡ ${config.NAME}`
+            : `⬡ ${config.NAME}`;
         log.header(label, 'magenta');
 
         // 1. Get all public tables

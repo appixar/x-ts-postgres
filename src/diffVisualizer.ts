@@ -20,8 +20,8 @@ export async function visualizeDiff(options: DiffOptions = {}): Promise<void> {
 
         for (const target of targets) {
             const label = multiCluster
-                ? `${target.id} 🛢 ${target.config.NAME}`
-                : `🛢 ${target.config.NAME}`;
+                ? `${target.id} ⬡ ${target.config.NAME}`
+                : `⬡ ${target.config.NAME}`;
             log.header(label, 'magenta');
 
             // Check if DB exists

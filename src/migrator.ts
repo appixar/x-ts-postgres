@@ -46,8 +46,8 @@ export async function up(
     for (const target of targets) {
       if (!mute) {
         const label = multiCluster
-          ? `${target.id} 🛢 ${target.config.NAME}`
-          : `🛢 ${target.config.NAME}`;
+          ? `${target.id} ⬡ ${target.config.NAME}`
+          : `⬡ ${target.config.NAME}`;
         log.header(label, "cyan");
       }
 

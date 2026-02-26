@@ -24,8 +24,8 @@ export async function runQuery(sql: string, options: QueryOptions = {}): Promise
 
         const multiCluster = engine.getTargetCount() > 1;
         const label = multiCluster
-            ? `${target.id} 🛢 ${target.config.NAME}`
-            : `🛢 ${target.config.NAME}`;
+            ? `${target.id} ⬡ ${target.config.NAME}`
+            : `⬡ ${target.config.NAME}`;
         if (multiCluster) {
             log.header(label, 'cyan');
         }

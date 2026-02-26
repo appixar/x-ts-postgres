@@ -73,8 +73,8 @@ program
 
       for (const target of targets) {
         const label = multiCluster
-          ? `${target.id} 🛢 ${target.config.NAME}`
-          : `🛢 ${target.config.NAME}`;
+          ? `${target.id} ⬡ ${target.config.NAME}`
+          : `⬡ ${target.config.NAME}`;
         log.header(label);
 
         const queries = await engine.generateDiff(target, true);

@@ -174,8 +174,8 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
 
         const multiCluster = engine.getTargetCount() > 1;
         const label = multiCluster
-            ? `${target.id} 🛢 ${target.config.NAME}`
-            : `🛢 ${target.config.NAME}`;
+            ? `${target.id} ⬡ ${target.config.NAME}`
+            : `⬡ ${target.config.NAME}`;
         log.header(label, 'magenta');
 
         // ────────────────────────────────────
