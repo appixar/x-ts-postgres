@@ -59,6 +59,14 @@ export class SchemaEngine {
   }
 
   /**
+   * Returns the number of database clusters defined in the config.
+   * Useful for conditionally displaying cluster identifiers only when > 1.
+   */
+  public getTargetCount(): number {
+    return Object.keys(this.config.postgres.DB).length;
+  }
+
+  /**
    * Iterate over all defined databases, or filter by name/tenant.
    * Yields a connected Database for each matching DB.
    */
@@ -128,7 +136,7 @@ export class SchemaEngine {
     }
 
     // 2. Fetch existing tables
-    if (!this.options.mute) log.spin(`[${id}] Analyzing database structure...`);
+    if (!this.options.mute) log.spin(`Analyzing database structure...`);
     let tablesReal: string[] = [];
     try {
       const t = await pg.query<{ table_name: string }>(
@@ -152,7 +160,7 @@ export class SchemaEngine {
       );
 
       if (!this.options.mute)
-        log.spin(`[${id}] Reading ${files.length} schema files...`);
+        log.spin(`Reading ${files.length} schema files...`);
 
       for (const fn of files) {
         const fp = join(schemaDir, fn);
@@ -236,7 +244,7 @@ export class SchemaEngine {
       const orphans = tablesReal.filter((t) => !tablesNew.includes(t));
       if (orphans.length > 0 && !this.options.mute) {
         log.warn(
-          `[${id}] ${orphans.length} orphan table(s) found: ${orphans.join(", ")}`,
+          `${orphans.length} orphan table(s) found: ${orphans.join(", ")}`,
         );
         log.info(`Use --drop-orphans to clean.`);
       }

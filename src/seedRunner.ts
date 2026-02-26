@@ -172,7 +172,11 @@ export async function runSeed(options: SeedOptions = {}): Promise<void> {
         const target = iter.value;
         const { pg, config } = target;
 
-        log.header(`Seeding ${target.id} (${target.config.NAME})`, 'magenta');
+        const multiCluster = engine.getTargetCount() > 1;
+        const label = multiCluster
+            ? `${target.id} 🛢 ${target.config.NAME}`
+            : `🛢 ${target.config.NAME}`;
+        log.header(label, 'magenta');
 
         // ────────────────────────────────────
         // PASS 1: Parse files, detect PKs

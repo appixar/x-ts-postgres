@@ -68,10 +68,14 @@ program
     const { SchemaEngine } = await import('./schemaEngine.js');
     try {
       const engine = new SchemaEngine({ config: opts.config, mute: false });
+      const multiCluster = engine.getTargetCount() > 1;
       const targets = engine.getTargets({ name: opts.name, tenant: opts.tenant });
 
       for (const target of targets) {
-        log.header(`${target.id} (${target.config.NAME})`);
+        const label = multiCluster
+          ? `${target.id} 🛢 ${target.config.NAME}`
+          : `🛢 ${target.config.NAME}`;
+        log.header(label);
 
         const queries = await engine.generateDiff(target, true);
 

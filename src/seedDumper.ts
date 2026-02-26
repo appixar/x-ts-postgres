@@ -92,7 +92,11 @@ export async function runSeedDump(options: SeedDumpOptions = {}): Promise<void> 
         }
         const { pg, config, id } = iter.value;
 
-        log.header(`Dumping seeds from ${id} (${config.NAME})`, 'magenta');
+        const multiCluster = engine.getTargetCount() > 1;
+        const label = multiCluster
+            ? `${id} 🛢 ${config.NAME}`
+            : `🛢 ${config.NAME}`;
+        log.header(label, 'magenta');
 
         // 1. Get all public tables
         log.spin('Analyzing database tables...');

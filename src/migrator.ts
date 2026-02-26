@@ -41,9 +41,15 @@ export async function up(
       name: options.name,
       tenant: options.tenant,
     });
+    const multiCluster = engine.getTargetCount() > 1;
 
     for (const target of targets) {
-      if (!mute) log.header(`${target.id} (${target.config.NAME})`, "cyan");
+      if (!mute) {
+        const label = multiCluster
+          ? `${target.id} 🛢 ${target.config.NAME}`
+          : `🛢 ${target.config.NAME}`;
+        log.header(label, "cyan");
+      }
 
       // 1. Check/Create Database
       if (options.create) {

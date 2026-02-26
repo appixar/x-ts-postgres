@@ -16,9 +16,13 @@ export async function visualizeDiff(options: DiffOptions = {}): Promise<void> {
 
     try {
         const targets = engine.getTargets({ name: options.name, tenant: options.tenant });
+        const multiCluster = engine.getTargetCount() > 1;
 
         for (const target of targets) {
-            log.header(`Schema Diff: ${target.id} (${target.config.NAME})`, 'magenta');
+            const label = multiCluster
+                ? `${target.id} 🛢 ${target.config.NAME}`
+                : `🛢 ${target.config.NAME}`;
+            log.header(label, 'magenta');
 
             // Check if DB exists
             const createDbQuery = await engine.checkDatabaseExistence(target);
@@ -34,7 +38,8 @@ export async function visualizeDiff(options: DiffOptions = {}): Promise<void> {
 
             if (!options.dropOrphans && orphanQueries.length > 0) {
                 const orphanNames = orphanQueries.map(q => q.table).join(', ');
-                log.warn(`[${target.id}] ${orphanQueries.length} orphan table(s) found: ${orphanNames}`);
+                const prefix = multiCluster ? `[${target.id}] ` : '';
+                log.warn(`${prefix}${orphanQueries.length} orphan table(s) found: ${orphanNames}`);
                 log.info(`Use --drop-orphans to include them in the diff.`);
             }
 
