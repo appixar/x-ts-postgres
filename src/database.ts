@@ -10,6 +10,12 @@ import type { DbNodeConfig } from './types.js';
 
 const { Pool } = pg;
 
+function prepareValue(v: unknown): unknown {
+    if (v !== null && typeof v === 'object' && !(v instanceof Date) && !Buffer.isBuffer(v)) {
+        return JSON.stringify(v);
+    }
+    return v;
+}
 export interface DatabaseOptions {
     /** Cluster name (key in POSTGRES.DB config) */
     cluster?: string;
@@ -206,7 +212,7 @@ export class Database {
 
             if (Array.isArray(params)) {
                 // Direct pass-through for positional parameters ($1, $2, etc.)
-                values = params;
+                values = params.map(prepareValue);
             } else if (params && Object.keys(params).length > 0) {
                 // Convert named params :key to $N positional params
                 let paramIndex = 0;
@@ -214,7 +220,7 @@ export class Database {
                 pgSql = sql.replace(/(?<!:):([a-zA-Z_]\w*)/g, (_match, key) => {
                     if (params[key] !== undefined) {
                         paramIndex++;
-                        values.push(params[key]);
+                        values.push(prepareValue(params[key]));
                         return `$${paramIndex}`;
                     }
                     return _match;
@@ -242,7 +248,7 @@ export class Database {
         const values = keys.map(k => {
             const v = data[k];
             if (v === 'NULL' || v === 'null') return null;
-            return v;
+            return prepareValue(v);
         });
 
         const sql = `INSERT INTO "${table}" (${cols}) VALUES (${placeholders}) RETURNING *`;
@@ -272,7 +278,7 @@ export class Database {
         const setClauses = Object.entries(data).map(([k, v]) => {
             if (v === 'NULL' || v === 'null' || v === '') return `"${k}" = NULL`;
             idx++;
-            vals.push(v);
+            vals.push(prepareValue(v));
             return `"${k}" = $${idx}`;
         });
 
@@ -285,7 +291,7 @@ export class Database {
                 if (v === 'NULL') return `"${k}" IS NULL`;
                 if (v === '') return `"${k}" = ''`;
                 idx++;
-                vals.push(v);
+                vals.push(prepareValue(v));
                 return `"${k}" = $${idx}`;
             });
             whereClause = whereParts.join(' AND ');
@@ -320,7 +326,7 @@ export class Database {
             const parts = Object.entries(condition).map(([k, v]) => {
                 if (v === null || v === 'NULL') return `"${k}" IS NULL`;
                 idx++;
-                vals.push(v);
+                vals.push(prepareValue(v));
                 return `"${k}" = $${idx}`;
             });
             whereClause = parts.join(' AND ');
@@ -350,7 +356,7 @@ export class Database {
         const parts = Object.entries(condition).map(([k, v]) => {
             if (v === null || v === 'NULL') return `"${k}" IS NULL`;
             idx++;
-            vals.push(v);
+            vals.push(prepareValue(v));
             return `"${k}" = $${idx}`;
         });
 
@@ -381,7 +387,7 @@ export class Database {
             const parts = Object.entries(condition).map(([k, v]) => {
                 if (v === null || v === 'NULL') return `"${k}" IS NULL`;
                 idx++;
-                vals.push(v);
+                vals.push(prepareValue(v));
                 return `"${k}" = $${idx}`;
             });
             sql += ` WHERE ${parts.join(' AND ')}`;
@@ -433,13 +439,13 @@ export class Database {
                 let values: unknown[] = [];
 
                 if (Array.isArray(params)) {
-                    values = params;
+                    values = params.map(prepareValue);
                 } else if (params && Object.keys(params).length > 0) {
                     let idx = 0;
                     pgSql = sql.replace(/(?<!:):([a-zA-Z_]\w*)/g, (_match, key) => {
                         if (params[key] !== undefined) {
                             idx++;
-                            values.push(params[key]);
+                            values.push(prepareValue(params[key]));
                             return `$${idx}`;
                         }
                         return _match;
@@ -482,7 +488,7 @@ export class Database {
             const parts = Object.entries(condition).map(([k, v]) => {
                 if (v === null || v === 'NULL') return `"${k}" IS NULL`;
                 idx++;
-                vals.push(v);
+                vals.push(prepareValue(v));
                 return `"${k}" = $${idx}`;
             });
             sql += ` WHERE ${parts.join(' AND ')}`;
@@ -513,7 +519,7 @@ export class Database {
         const parts = Object.entries(condition).map(([k, v]) => {
             if (v === null || v === 'NULL') return `"${k}" IS NULL`;
             idx++;
-            vals.push(v);
+            vals.push(prepareValue(v));
             return `"${k}" = $${idx}`;
         });
 
