@@ -67,13 +67,13 @@ program
     const chalk = (await import('chalk')).default;
     const { SchemaEngine } = await import('./schemaEngine.js');
     try {
-      const engine = new SchemaEngine({ config: opts.config, mute: true });
+      const engine = new SchemaEngine({ config: opts.config, mute: false });
       const targets = engine.getTargets({ name: opts.name, tenant: opts.tenant });
 
       for (const target of targets) {
-        console.log(`\n${chalk.bold(target.id)} ${chalk.dim(`(${target.config.NAME})`)}\n`);
+        log.header(`${target.id} (${target.config.NAME})`);
 
-        const queries = await engine.generateDiff(target);
+        const queries = await engine.generateDiff(target, true);
 
         // Group queries by table
         const byTable = new Map<string, { count: number; types: Set<string> }>();
@@ -106,6 +106,9 @@ program
             upToDate++;
           } else if (info.types.has('CREATE_TABLE')) {
             console.log(`  ${chalk.green('+')} ${chalk.white.bold(tbl)} ${chalk.dim('— new table')}`);
+            pending++;
+          } else if (info.types.has('DROP_TABLE')) {
+            console.log(`  ${chalk.red('✖')} ${chalk.white.bold(tbl)} ${chalk.dim('— orphan table')}`);
             pending++;
           } else {
             const desc: string[] = [];

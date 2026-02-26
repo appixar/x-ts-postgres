@@ -27,17 +27,30 @@ export async function visualizeDiff(options: DiffOptions = {}): Promise<void> {
                 log.info('It will be created on `up`.');
             }
 
-            const queries = await engine.generateDiff(target, options.dropOrphans);
+            const allQueries = await engine.generateDiff(target, true);
             
-            if (createDbQuery) {
-                queries.unshift(createDbQuery);
+            const orphanQueries = allQueries.filter(q => q.type === 'DROP_TABLE');
+            const diffQueries = options.dropOrphans ? allQueries : allQueries.filter(q => q.type !== 'DROP_TABLE');
+
+            if (!options.dropOrphans && orphanQueries.length > 0) {
+                const orphanNames = orphanQueries.map(q => q.table).join(', ');
+                log.warn(`[${target.id}] ${orphanQueries.length} orphan table(s) found: ${orphanNames}`);
+                log.info(`Use --drop-orphans to include them in the diff.`);
             }
 
-            if (queries.length > 0) {
-                renderQueries(queries, displayMode);
-                renderSummary(queries.length, 'differences');
+            if (createDbQuery) {
+                diffQueries.unshift(createDbQuery);
+            }
+
+            if (diffQueries.length > 0) {
+                renderQueries(diffQueries, displayMode);
+                renderSummary(diffQueries.length, 'differences');
             } else {
-                log.succeed('Schemas are in sync.');
+                if (!options.dropOrphans && orphanQueries.length > 0) {
+                    log.succeed('Schemas are in sync (ignoring orphans).');
+                } else {
+                    log.succeed('Schemas are in sync.');
+                }
             }
         }
     } finally {
